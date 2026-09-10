@@ -1,0 +1,29 @@
+#!/bin/sh
+# Validate the pending commit message.
+set -eu
+
+python_cmd() {
+    if command -v py >/dev/null 2>&1; then
+        printf '%s\n' 'py -3'
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 --version >/dev/null 2>&1 || {
+            echo "commit-msg: the python3 command is not usable; install Python or enable py" >&2
+            exit 1
+        }
+        printf '%s\n' python3
+    elif command -v python >/dev/null 2>&1; then
+        python --version >/dev/null 2>&1 || {
+            echo "commit-msg: the python command is not usable; install Python or enable py" >&2
+            exit 1
+        }
+        printf '%s\n' python
+    else
+        echo "commit-msg: Python is required for governance checks" >&2
+        exit 1
+    fi
+}
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+PYTHON=$(python_cmd)
+
+PYTHONDONTWRITEBYTECODE=1 $PYTHON "$REPO_ROOT/.githooks/message_structure.py" commit-message "$1"

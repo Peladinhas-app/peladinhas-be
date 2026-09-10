@@ -1,0 +1,54 @@
+#!/bin/sh
+# Protect branch isolation and reject staged secrets.
+set -eu
+
+python_cmd() {
+    if command -v py >/dev/null 2>&1; then
+        printf '%s\n' 'py -3'
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 --version >/dev/null 2>&1 || {
+            echo "pre-commit: the python3 command is not usable; install Python or enable py" >&2
+            exit 1
+        }
+        printf '%s\n' python3
+    elif command -v python >/dev/null 2>&1; then
+        python --version >/dev/null 2>&1 || {
+            echo "pre-commit: the python command is not usable; install Python or enable py" >&2
+            exit 1
+        }
+        printf '%s\n' python
+    else
+        echo "pre-commit: Python is required for governance checks" >&2
+        exit 1
+    fi
+}
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+COMMON_DIR=$(git rev-parse --path-format=absolute --git-common-dir)
+MAIN_ROOT=$(dirname "$COMMON_DIR")
+BRANCH=$(git branch --show-current)
+PYTHON=$(python_cmd)
+
+if [ -z "$BRANCH" ]; then
+    echo "pre-commit: detached HEAD is not a task branch" >&2
+    exit 1
+fi
+
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    if [ "$BRANCH" = "main" ]; then
+        echo "pre-commit: protected branch 'main' cannot receive task commits" >&2
+        exit 1
+    fi
+    if [ "$REPO_ROOT" = "$MAIN_ROOT" ]; then
+        echo "pre-commit: implementation commits require a linked worktree" >&2
+        exit 1
+    fi
+    PYTHONDONTWRITEBYTECODE=1 $PYTHON "$REPO_ROOT/.githooks/message_structure.py" branch "$BRANCH"
+    PYTHONDONTWRITEBYTECODE=1 $PYTHON "$REPO_ROOT/.governance/check_context.py"
+else
+    if [ "$BRANCH" != "main" ]; then
+        PYTHONDONTWRITEBYTECODE=1 $PYTHON "$REPO_ROOT/.githooks/message_structure.py" branch "$BRANCH"
+    fi
+fi
+
+PYTHONDONTWRITEBYTECODE=1 $PYTHON "$REPO_ROOT/.githooks/secret_scan.py"

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Reserved for future merge-time governance.
+exit 0

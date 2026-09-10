@@ -1,0 +1,7 @@
+#!/bin/sh
+# Print the newest local commit for quick verification.
+set -eu
+
+printf 'post-commit: %s on %s\n' \
+    "$(git log -1 --format='%h %s')" \
+    "$(git branch --show-current)"

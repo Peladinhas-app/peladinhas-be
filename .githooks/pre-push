@@ -1,0 +1,54 @@
+#!/bin/sh
+# Validate pushed branch names and commit messages.
+set -eu
+
+python_cmd() {
+    if command -v py >/dev/null 2>&1; then
+        printf '%s\n' 'py -3'
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 --version >/dev/null 2>&1 || {
+            echo "pre-push: the python3 command is not usable; install Python or enable py" >&2
+            exit 1
+        }
+        printf '%s\n' python3
+    elif command -v python >/dev/null 2>&1; then
+        python --version >/dev/null 2>&1 || {
+            echo "pre-push: the python command is not usable; install Python or enable py" >&2
+            exit 1
+        }
+        printf '%s\n' python
+    else
+        echo "pre-push: Python is required for governance checks" >&2
+        exit 1
+    fi
+}
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+MESSAGE_CHECKER="$REPO_ROOT/.githooks/message_structure.py"
+PYTHON=$(python_cmd)
+REFS=$(mktemp "${TMPDIR:-/tmp}/peladinhas-pre-push.XXXXXX")
+trap 'rm -f "$REFS"' EXIT HUP INT TERM
+cat >"$REFS"
+
+if grep -Eq 'refs/heads/main( |$)' "$REFS"; then
+    echo "pre-push: direct pushes to main are forbidden" >&2
+    exit 1
+fi
+
+if [ "${PELADINHAS_PUSH_APPROVAL:-}" != "APPROVE PUSH" ]; then
+    echo "pre-push: set PELADINHAS_PUSH_APPROVAL='APPROVE PUSH' only after exact user approval" >&2
+    exit 1
+fi
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    case "$remote_ref" in
+        refs/heads/*)
+            branch=${remote_ref#refs/heads/}
+            PYTHONDONTWRITEBYTECODE=1 $PYTHON "$MESSAGE_CHECKER" branch "$branch"
+            case "$local_sha" in
+                0000000000000000000000000000000000000000) ;;
+                *) PYTHONDONTWRITEBYTECODE=1 $PYTHON "$MESSAGE_CHECKER" push-commits "$local_sha" "$remote_sha" ;;
+            esac
+            ;;
+    esac
+done <"$REFS"
