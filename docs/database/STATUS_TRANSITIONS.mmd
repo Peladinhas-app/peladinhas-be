@@ -1,0 +1,61 @@
+stateDiagram-v2
+    direction LR
+
+    state "matches" as matches {
+        [*] --> match_draft
+        match_draft --> match_recruiting: opened_for_players
+        match_draft --> match_cancelled: draft_abandoned
+        match_recruiting --> match_ready: readiness_conditions_met
+        match_recruiting --> match_cancelled: match_cancelled
+        match_ready --> match_recruiting: readiness_conditions_no_longer_met
+        match_ready --> match_completed: scheduled_match_finished
+        match_ready --> match_cancelled: match_cancelled_before_play
+        match_completed --> [*]
+        match_cancelled --> [*]
+    }
+
+    state "match_participants" as match_participants {
+        [*] --> participant_requested: request_to_join
+        [*] --> participant_awaiting_payment: open_join
+        participant_requested --> participant_approved: admin_approves
+        participant_requested --> participant_rejected: admin_rejects
+        participant_requested --> participant_cancelled: player_withdraws
+        participant_approved --> participant_awaiting_payment: payment_required
+        participant_approved --> participant_cancelled: player_withdraws
+        participant_awaiting_payment --> participant_confirmed: payment_succeeds
+        participant_awaiting_payment --> participant_cancelled: cancelled_or_payment_expires
+        participant_confirmed --> participant_cancelled: spot_cancelled
+        participant_rejected --> participant_requested: new_request_attempt
+        participant_cancelled --> participant_requested: new_request_attempt
+        participant_cancelled --> participant_awaiting_payment: new_open_join_attempt
+    }
+
+    state "bookings" as bookings {
+        [*] --> booking_provisional
+        booking_provisional --> booking_confirmed: wins_slot_and_conditions_met
+        booking_provisional --> booking_lost: competing_booking_wins
+        booking_provisional --> booking_rejected: owner_rejects
+        booking_provisional --> booking_cancelled: booking_attempt_abandoned
+        booking_confirmed --> booking_cancelled: booking_or_match_cancelled
+        booking_lost --> [*]
+        booking_rejected --> [*]
+        booking_cancelled --> [*]
+    }
+
+    state "payments" as payments {
+        [*] --> payment_pending
+        payment_pending --> payment_succeeded: provider_confirms_payment
+        payment_pending --> payment_failed: provider_reports_failure
+        payment_pending --> payment_cancelled: payment_cancelled_before_success
+        payment_succeeded --> [*]
+        payment_failed --> [*]
+        payment_cancelled --> [*]
+    }
+
+    state "refunds" as refunds {
+        [*] --> refund_pending
+        refund_pending --> refund_processed: provider_confirms_refund
+        refund_pending --> refund_failed: provider_reports_failure
+        refund_processed --> [*]
+        refund_failed --> [*]
+    }
