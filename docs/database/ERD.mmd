@@ -1,0 +1,237 @@
+erDiagram
+    users {
+        UUID id PK
+        VARCHAR email UK
+        VARCHAR name
+        VARCHAR preferred_language
+        TEXT profile_image_url
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+    }
+
+    groups {
+        UUID id PK
+        VARCHAR name
+        TEXT description
+        VARCHAR visibility
+        UUID created_by_user_id FK
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+    }
+
+    group_members {
+        UUID group_id PK,FK
+        UUID user_id PK,FK
+        VARCHAR role
+        VARCHAR status
+        TIMESTAMPTZ joined_at
+        TIMESTAMPTZ updated_at
+    }
+
+    pitches {
+        UUID id PK
+        UUID owner_user_id FK
+        VARCHAR name
+        TEXT description
+        TEXT address
+        DECIMAL latitude
+        DECIMAL longitude
+        VARCHAR timezone
+        NUMERIC base_price
+        CHAR currency
+        BOOLEAN is_active
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+    }
+
+    pitch_images {
+        UUID id PK
+        UUID pitch_id FK
+        TEXT image_url
+        INTEGER display_order
+        TIMESTAMPTZ created_at
+    }
+
+    pitch_schedules {
+        UUID id PK
+        UUID pitch_id FK
+        SMALLINT day_of_week
+        TIME starts_at
+        TIME ends_at
+    }
+
+    pitch_blocks {
+        UUID id PK
+        UUID pitch_id FK
+        TIMESTAMPTZ starts_at
+        TIMESTAMPTZ ends_at
+        VARCHAR reason_code
+        TEXT note
+        TIMESTAMPTZ created_at
+    }
+
+    matches {
+        UUID id PK
+        UUID group_id FK
+        UUID created_by_user_id FK
+        TIMESTAMPTZ starts_at
+        TIMESTAMPTZ ends_at
+        INTEGER max_players
+        VARCHAR join_mode
+        VARCHAR status
+        BOOLEAN public_vacancies_enabled
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+    }
+
+    match_admins {
+        UUID match_id PK,FK
+        UUID user_id PK,FK
+        TIMESTAMPTZ assigned_at
+    }
+
+    match_participants {
+        UUID id PK
+        UUID match_id FK
+        UUID user_id FK
+        VARCHAR status
+        TIMESTAMPTZ joined_at
+        TIMESTAMPTZ confirmed_at
+        TIMESTAMPTZ cancelled_at
+    }
+
+    match_price_adjustments {
+        UUID id PK
+        UUID match_id FK
+        INTEGER old_player_count
+        INTEGER new_player_count
+        NUMERIC old_price_per_player
+        NUMERIC new_price_per_player
+        CHAR currency
+        UUID created_by_user_id FK
+        TIMESTAMPTZ created_at
+    }
+
+    bookings {
+        UUID id PK
+        UUID match_id FK
+        UUID pitch_id FK
+        TIMESTAMPTZ starts_at
+        TIMESTAMPTZ ends_at
+        NUMERIC total_price
+        CHAR currency
+        VARCHAR status
+        TIMESTAMPTZ confirmed_at
+        TIMESTAMPTZ rejected_at
+        TIMESTAMPTZ cancelled_at
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+    }
+
+    booking_rejections {
+        UUID id PK
+        UUID booking_id FK
+        VARCHAR reason_code
+        TEXT explanation
+        TIMESTAMPTZ created_at
+    }
+
+    payments {
+        UUID id PK
+        UUID participant_id FK
+        VARCHAR type
+        NUMERIC amount
+        NUMERIC service_fee
+        CHAR currency
+        VARCHAR status
+        VARCHAR provider
+        VARCHAR provider_payment_id
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ paid_at
+    }
+
+    refunds {
+        UUID id PK
+        UUID payment_id FK
+        NUMERIC amount
+        VARCHAR reason_code
+        VARCHAR status
+        VARCHAR provider_refund_id
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ processed_at
+    }
+
+    chats {
+        UUID id PK
+        VARCHAR type
+        UUID group_id FK
+        UUID match_id FK
+        UUID booking_id FK
+        TIMESTAMPTZ created_at
+    }
+
+    chat_members {
+        UUID chat_id PK,FK
+        UUID user_id PK,FK
+        TIMESTAMPTZ joined_at
+    }
+
+    messages {
+        UUID id PK
+        UUID chat_id FK
+        UUID sender_user_id FK
+        TEXT content
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ edited_at
+    }
+
+    notifications {
+        UUID id PK
+        UUID user_id FK
+        VARCHAR type
+        VARCHAR related_entity_type
+        UUID related_entity_id
+        JSONB payload
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ read_at
+    }
+
+    users ||--o{ pitches : owns
+    users ||--o{ groups : creates
+    users ||--o{ matches : creates
+    users ||--o{ match_price_adjustments : creates
+    users ||--o{ notifications : receives
+    users ||--o{ messages : sends
+
+    users ||--o{ group_members : has
+    groups ||--o{ group_members : has
+
+    groups ||--o{ matches : organizes
+
+    users ||--o{ match_admins : administers
+    matches ||--o{ match_admins : has
+
+    users ||--o{ match_participants : joins
+    matches ||--o{ match_participants : has
+
+    matches ||--o{ match_price_adjustments : has
+
+    matches ||--o{ bookings : attempts
+    pitches ||--o{ bookings : booked_for
+    pitches ||--o{ pitch_images : has
+    pitches ||--o{ pitch_schedules : has
+    pitches ||--o{ pitch_blocks : has
+
+    bookings ||--o{ booking_rejections : has
+
+    match_participants ||--o{ payments : pays
+    payments ||--o{ refunds : refunded_by
+
+    groups o|--o| chats : optional_context
+    matches o|--o| chats : optional_context
+    bookings o|--o| chats : optional_context
+
+    users ||--o{ chat_members : joins
+    chats ||--o{ chat_members : has
+
+    chats ||--o{ messages : contains
