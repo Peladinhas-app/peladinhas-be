@@ -1,0 +1,6 @@
+spring:
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    fail-on-missing-locations: false
+    clean-disabled: true

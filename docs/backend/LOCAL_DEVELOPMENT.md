@@ -61,13 +61,23 @@ mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
 Normal `mvn test` does not require PostgreSQL to be running. To run the
-explicit local PostgreSQL connectivity test, start PostgreSQL first and opt in:
+full automated test suite:
 
 ```powershell
-$env:PELADINHAS_RUN_LOCAL_DB_TESTS = "true"
-mvn test -Dtest=DatabaseConnectionTests
-Remove-Item Env:\PELADINHAS_RUN_LOCAL_DB_TESTS
+mvn test
 ```
+
+## Automated database tests
+
+Automated database tests use Testcontainers, which starts a temporary
+PostgreSQL container for the test run. These tests do not use the manual local
+`peladinhas_dev` database, do not require port `55432`, and do not require a
+developer-created database.
+
+Docker must be available for these integration tests. Testcontainers supplies
+the temporary database connection to Spring during the test run, and Flyway runs
+against that temporary database. Developers should not point automated tests at
+`peladinhas_dev`.
 
 ## Flyway migrations
 
