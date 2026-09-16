@@ -1,0 +1,6 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${PELADINHAS_DB_HOST:127.0.0.1}:${PELADINHAS_DB_PORT:55432}/${PELADINHAS_DB_NAME:peladinhas_dev}
+    username: ${PELADINHAS_DB_USER:peladinhas_dev}
+    password: ${PELADINHAS_DB_PASSWORD:peladinhas_dev_password}
+    driver-class-name: org.postgresql.Driver

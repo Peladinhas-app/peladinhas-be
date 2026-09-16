@@ -27,12 +27,47 @@ For PostgreSQL 18 Docker images, the local data volume is mounted at
 
 The defaults can be overridden with environment variables:
 
+- `PELADINHAS_DB_HOST`
 - `PELADINHAS_DB_NAME`
 - `PELADINHAS_DB_USER`
 - `PELADINHAS_DB_PASSWORD`
 - `PELADINHAS_DB_PORT`
 
 Do not commit local `.env` files. They are ignored by Git.
+
+## Spring local database connection
+
+Spring Boot reads local database settings from `src/main/resources/application-local.yml`
+when the `local` profile is active.
+
+Default local Spring connection values:
+
+| Setting | Environment variable | Default value |
+|---|---|---|
+| Host | `PELADINHAS_DB_HOST` | `127.0.0.1` |
+| Port | `PELADINHAS_DB_PORT` | `55432` |
+| Database | `PELADINHAS_DB_NAME` | `peladinhas_dev` |
+| User | `PELADINHAS_DB_USER` | `peladinhas_dev` |
+| Password | `PELADINHAS_DB_PASSWORD` | `peladinhas_dev_password` |
+
+The local defaults match the Docker Compose service. Hosted or production
+database credentials must be supplied by environment variables or a future
+secret manager. Production credentials must never be committed.
+
+Run the application with the local profile after PostgreSQL is started:
+
+```powershell
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+Normal `mvn test` does not require PostgreSQL to be running. To run the
+explicit local PostgreSQL connectivity test, start PostgreSQL first and opt in:
+
+```powershell
+$env:PELADINHAS_RUN_LOCAL_DB_TESTS = "true"
+mvn test -Dtest=DatabaseConnectionTests
+Remove-Item Env:\PELADINHAS_RUN_LOCAL_DB_TESTS
+```
 
 ## Start PostgreSQL
 
