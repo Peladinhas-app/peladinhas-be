@@ -69,6 +69,23 @@ mvn test -Dtest=DatabaseConnectionTests
 Remove-Item Env:\PELADINHAS_RUN_LOCAL_DB_TESTS
 ```
 
+## Flyway migrations
+
+Flyway owns database schema changes. Future migration files will live under
+`src/main/resources/db/migration/` and will run automatically when the
+application starts with the `local` profile and can connect to PostgreSQL.
+
+This phase intentionally has no numbered migration files, so Flyway only
+initializes its metadata table and records that no application migrations have
+been applied. The local `fail-on-missing-locations: false` setting exists only
+for this zero-migration phase and must be revisited when real migrations are
+introduced. Do not manually edit the database schema and do not use Hibernate
+or Java Persistence API schema generation for Peladinhas tables.
+
+Production or hosted environments must use the same Flyway migration mechanism
+with database connection values supplied by environment variables or a future
+secret manager.
+
 ## Start PostgreSQL
 
 ```powershell
