@@ -4,3 +4,7 @@ spring:
     locations: classpath:db/migration
     fail-on-missing-locations: true
     clean-disabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false

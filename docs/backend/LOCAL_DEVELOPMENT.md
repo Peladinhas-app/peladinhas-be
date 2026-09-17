@@ -97,6 +97,28 @@ Production or hosted environments must use the same Flyway migration mechanism
 with database connection values supplied by environment variables or a future
 secret manager.
 
+## JPA persistence mappings
+
+Spring Data JPA and Hibernate map the Flyway-managed schema. Hibernate is
+configured with `spring.jpa.hibernate.ddl-auto=validate`, so it validates the
+database structure but must not create, update, or drop Peladinhas tables.
+
+Persistence classes live under `com.peladinhas.backend.domains.*.persistence`.
+Repository interfaces stay in the same domain persistence package as the entity
+they access. Repositories should start with ordinary Spring Data behavior; add
+custom queries only when a service phase needs them.
+
+Composite primary keys use `@EmbeddedId` with `@MapsId` so join tables keep the
+approved database keys while still exposing explicit entity relationships.
+Entity relationships use conservative cascading. Historical booking and
+financial rows should not disappear through parent-entity cascade deletes.
+
+Stable database status and code values are represented by Java enums and stored
+as their approved English string values, never enum ordinals.
+
+`notifications.payload` is mapped as PostgreSQL `jsonb` to a Java
+`Map<String, Object>` using Hibernate's JSON support.
+
 ## Start PostgreSQL
 
 ```powershell
