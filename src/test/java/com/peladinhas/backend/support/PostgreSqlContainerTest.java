@@ -28,7 +28,7 @@ public abstract class PostgreSqlContainerTest {
         registry.add("spring.datasource.driver-class-name", POSTGRESQL::getDriverClassName);
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("spring.flyway.locations", () -> "classpath:db/migration");
-        registry.add("spring.flyway.fail-on-missing-locations", () -> "false");
+        registry.add("spring.flyway.fail-on-missing-locations", () -> "true");
         registry.add("spring.flyway.clean-disabled", () -> "true");
     }
 }

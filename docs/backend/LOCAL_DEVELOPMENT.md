@@ -85,12 +85,13 @@ Flyway owns database schema changes. Future migration files will live under
 `src/main/resources/db/migration/` and will run automatically when the
 application starts with the `local` profile and can connect to PostgreSQL.
 
-This phase intentionally has no numbered migration files, so Flyway only
-initializes its metadata table and records that no application migrations have
-been applied. The local `fail-on-missing-locations: false` setting exists only
-for this zero-migration phase and must be revisited when real migrations are
-introduced. Do not manually edit the database schema and do not use Hibernate
-or Java Persistence API schema generation for Peladinhas tables.
+Migration files are immutable once committed or applied. If a schema change is
+needed after a migration has been shared, create a new migration instead of
+editing the existing file. Flyway fails when the configured migration location
+is missing, so accidental removal of migration resources is visible.
+
+Do not manually edit the database schema and do not use Hibernate or Java
+Persistence API schema generation for Peladinhas tables.
 
 Production or hosted environments must use the same Flyway migration mechanism
 with database connection values supplied by environment variables or a future
@@ -124,7 +125,9 @@ docker compose down
 ## Reset the local database volume
 
 This deletes the local PostgreSQL data volume. Use it only when local
-development data can be discarded.
+development data can be discarded. During early schema development, this is the
+safest way to rebuild the disposable local database from committed Flyway
+migrations.
 
 ```powershell
 docker compose down -v

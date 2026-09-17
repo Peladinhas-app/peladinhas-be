@@ -287,8 +287,12 @@ Business constraints:
 - Do not store `pitch_id` directly on `matches`; pitch choice and history live
   in `bookings`.
 - V1 allows one active/upcoming match per group.
-- Do not hard-code the one-active/upcoming-match rule as a database constraint
-  until the exact active statuses are finalized.
+- For V1, `draft`, `recruiting`, and `ready` count as active/upcoming while
+  the scheduled match end time is in the future. `completed` and `cancelled`
+  do not count.
+- Do not implement the one-active/upcoming-match rule as a database constraint
+  in the initial schema phase. The implementation mechanism remains a later
+  migration/schema decision.
 
 Design reasoning:
 
@@ -554,7 +558,10 @@ Important constraints:
 - `amount > 0`.
 - Total processed refunds for a payment must not exceed that payment's paid
   amount plus refundable service fee according to the final fee policy.
-- `provider_refund_id` should be unique per provider when present.
+- `provider_refund_id` remains nullable.
+- Per-provider uniqueness for refund provider references is deferred until the
+  provider/refund integration strategy is finalized. Do not impose global
+  uniqueness without a provider column.
 
 Financial audit rules:
 
@@ -743,12 +750,13 @@ No SQL or migration is implemented in this design document.
 
 V1 allows only one active/upcoming match per group.
 
-This should be enforced once the exact set of active/upcoming statuses is
-decided. Candidate statuses may include `draft`, `recruiting`, and `ready`, but
-the final set is TBD.
+For V1, `draft`, `recruiting`, and `ready` count as active/upcoming while the
+scheduled match end time is in the future. `completed` and `cancelled` do not
+count.
 
-Do not prematurely implement a database constraint until the status semantics
-are finalized.
+Do not implement the database constraint in the initial schema phase. The
+implementation mechanism must be decided during the later constraints/schema
+phase.
 
 ## Open/TBD decisions
 
@@ -764,7 +772,6 @@ are finalized.
 - Final payment provider details.
 - Final notification delivery implementation.
 - Whether `EUR` is permanently global or currency remains per financial record.
-- Exact statuses that count as active/upcoming for the one-active-match-per-group rule.
 - Final strategy for storing/translating localized database content.
 - Whether payment amounts should later move from `NUMERIC(10,2)` to integer
   minor units after payment-provider selection.
@@ -782,7 +789,7 @@ are finalized.
    payment provider is confirmed.
 4. Add an explicit idempotency strategy for external payment/refund callbacks
    and booking confirmation retries.
-5. Decide the exact active/upcoming match statuses before enforcing the
+5. Decide the database enforcement mechanism for the approved
    one-active/upcoming-match-per-group rule.
 6. Define the standard migration tool and database test strategy before
    creating SQL.

@@ -7,5 +7,5 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-    fail-on-missing-locations: false
+    fail-on-missing-locations: true
     clean-disabled: true
