@@ -39,6 +39,10 @@ The product source of truth is `../Documentation/REQUIREMENTS_V1.md`.
 - A private group may expose only empty match vacancies publicly.
 - An outside player can join that match without joining the private group.
 - An outside player cannot access the private group chat.
+- When creating or scheduling a match, the organizer chooses a supported
+  duration. Initial V1 duration options are 60, 90, 120, and 150 minutes.
+- Match and booking duration is represented by `ends_at - starts_at`; do not
+  add a redundant duration column.
 - Payment is required to guarantee a match spot.
 - Pitch price is divided among players.
 - If fewer players remain at the formation deadline, an admin may cancel or
@@ -286,6 +290,12 @@ Business constraints:
 
 - Do not store `pitch_id` directly on `matches`; pitch choice and history live
   in `bookings`.
+- Do not store a separate duration column. Duration is derived from
+  `ends_at - starts_at`.
+- Initial V1 supported match durations are 60, 90, 120, and 150 minutes.
+- The backend/application layer should calculate `ends_at` from the selected
+  start time and supported duration, then validate that the duration is
+  supported.
 - V1 allows one active/upcoming match per group.
 - For V1, `draft`, `recruiting`, and `ready` count as active/upcoming while
   the scheduled match end time is in the future. `completed` and `cancelled`
@@ -300,8 +310,10 @@ Design reasoning:
   attempts over time without destroying history.
 - `matches.starts_at` and `matches.ends_at` represent the match's current
   scheduled time.
+- Match duration is represented by `matches.ends_at - matches.starts_at`.
 - `bookings.starts_at` and `bookings.ends_at` preserve the slot associated with
   that specific booking attempt.
+- Booking duration is represented by `bookings.ends_at - bookings.starts_at`.
 - This duplication is intentional: a match may lose or reject one booking
   attempt and later choose another pitch or time, while historical booking
   attempts must remain unchanged.
@@ -398,8 +410,12 @@ Business constraints:
 - A match may have several booking attempts over its lifetime.
 - Provisional bookings may overlap.
 - Two confirmed bookings for the same pitch must never overlap.
+- Availability and booking-overlap checks must use the complete
+  `starts_at -> ends_at` interval.
 - `total_price` preserves the historical price agreed for that booking even if
   `pitches.base_price` changes later.
+- Pitch pricing by duration is a separate business rule that still needs to be
+  finalized. Do not infer a pricing formula from duration in v0.1.
 - Paid players affected by `lost` or paid rejected bookings receive full
   refunds according to V1.
 
@@ -723,6 +739,7 @@ Derived availability should account for:
 - recurring schedule windows;
 - exception blocks;
 - confirmed bookings;
+- the complete `starts_at -> ends_at` interval for each booking;
 - pitch active status;
 - future search performance for nearby and available pitches.
 
@@ -772,6 +789,7 @@ phase.
 - Final payment provider details.
 - Final notification delivery implementation.
 - Whether `EUR` is permanently global or currency remains per financial record.
+- Pitch pricing by duration.
 - Final strategy for storing/translating localized database content.
 - Whether payment amounts should later move from `NUMERIC(10,2)` to integer
   minor units after payment-provider selection.
