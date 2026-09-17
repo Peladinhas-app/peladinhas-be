@@ -217,13 +217,16 @@ Important constraints:
 
 - `day_of_week BETWEEN 1 AND 7`.
 - `starts_at < ends_at`.
-- Recommended validation should prevent overlapping recurring windows for the
-  same pitch and day.
+- Recurring windows for the same pitch and day must not overlap. Adjacent
+  windows are allowed.
 
 Design reasoning:
 
 - Recurring schedule is separate from exception blocks so owners can express
   normal weekly availability and one-off closures independently.
+- V2 enforces same-pitch/same-day schedule overlap with a PostgreSQL exclusion
+  constraint over a derived half-open time range. This keeps the rule
+  declarative and allows adjacent schedule windows.
 
 ### pitch_blocks
 
@@ -296,13 +299,20 @@ Business constraints:
 - The backend/application layer should calculate `ends_at` from the selected
   start time and supported duration, then validate that the duration is
   supported.
+- V2 does not add a database duration check. Supported durations remain
+  application validation because the database stores only the resulting
+  `starts_at` and `ends_at` interval, and hard-coding today's selectable
+  durations into historical booking attempts would make future changes harder.
 - V1 allows one active/upcoming match per group.
 - For V1, `draft`, `recruiting`, and `ready` count as active/upcoming while
   the scheduled match end time is in the future. `completed` and `cancelled`
   do not count.
-- Do not implement the one-active/upcoming-match rule as a database constraint
-  in the initial schema phase. The implementation mechanism remains a later
-  migration/schema decision.
+- V2 does not implement the one-active/upcoming-match rule as a database
+  constraint. PostgreSQL partial unique indexes cannot safely depend on
+  `now()`, and a static non-terminal unique index would incorrectly block
+  old unfinished rows forever. V1 should enforce this rule in a transactional
+  Spring service with appropriate locking when match creation/update logic is
+  implemented.
 
 Design reasoning:
 
@@ -425,12 +435,16 @@ Concurrency rules:
 - The implementation should use PostgreSQL-safe protection, such as an
   exclusion constraint over pitch and time range for confirmed bookings, or an
   equivalent locking strategy.
+- V2 uses a PostgreSQL exclusion constraint over `pitch_id` and the half-open
+  `starts_at -> ends_at` range for rows with `status = 'confirmed'`.
 - The confirmation operation must be idempotent so retrying a request does not
   duplicate financial effects or state transitions.
 - Competing provisional bookings that lose the slot should transition to
   `lost` in the same workflow that confirms the winning booking.
 
-No SQL constraint is implemented in this document.
+V2 implements the database-level overlap guard. Application workflows must
+still handle state transitions, idempotency, losing provisional bookings, and
+financial side effects transactionally.
 
 ### booking_rejections
 
@@ -753,6 +767,7 @@ Recommended implementation direction:
 
 - Use database transactions for confirmation workflows.
 - Protect confirmed booking overlap with PostgreSQL-safe constraints or locks.
+  V2 implements a PostgreSQL exclusion constraint for this invariant.
 - Keep provisional bookings allowed to overlap.
 - Ensure booking confirmation is idempotent.
 - Ensure payment and refund operations are idempotent.
@@ -761,7 +776,10 @@ Recommended implementation direction:
 - Trigger required full refunds for paid participants affected by `lost` or
   rejected paid bookings.
 
-No SQL or migration is implemented in this design document.
+The V2 migration enables the `btree_gist` PostgreSQL extension so GiST
+exclusion constraints can compare UUID and small integer equality. It uses
+half-open ranges (`[start, end)`) so adjacent bookings and schedule windows are
+allowed while true overlaps are rejected.
 
 ## One active/upcoming match per group
 
@@ -771,9 +789,55 @@ For V1, `draft`, `recruiting`, and `ready` count as active/upcoming while the
 scheduled match end time is in the future. `completed` and `cancelled` do not
 count.
 
-Do not implement the database constraint in the initial schema phase. The
-implementation mechanism must be decided during the later constraints/schema
-phase.
+V2 intentionally defers database enforcement. The rule depends on current time
+(`ends_at > now()`), which is not safe for a PostgreSQL partial unique index
+because index predicates must be stable for stored rows. A unique index over
+non-terminal statuses alone would weaken the rule into "one unfinished match
+forever." V1 should enforce this in a transactional Spring service when match
+creation and status updates are implemented.
+
+## Index strategy
+
+V2 adds indexes for the expected V1 query paths that are not already covered by
+primary keys, unique constraints, or the new exclusion constraints:
+
+- `idx_group_members_user_status` supports listing a user's group memberships
+  by membership state.
+- `idx_matches_group_status_time` supports finding a group's current and
+  upcoming matches by status and time.
+- `idx_match_participants_match_status` supports roster and capacity checks by
+  match and participant status.
+- `idx_bookings_match` supports loading booking attempts for a match.
+- `idx_bookings_pitch_status_time` supports pitch availability and booking
+  history queries by pitch, booking status, and time interval.
+- `idx_pitch_blocks_pitch_time` supports availability calculations that subtract
+  owner-defined blocks from recurring schedules.
+- `idx_payments_participant_status` supports payment-state lookup for a
+  participant.
+- `idx_refunds_payment_status` supports refund audit/history lookup by payment.
+- `idx_chat_members_user` supports listing chats visible to a user.
+- `idx_messages_chat_created_at` supports ordered chat history reads.
+- `idx_notifications_user_read_created` supports notification inbox queries by
+  user, read state, and recency.
+
+The pitch schedule overlap exclusion constraint also supports the same
+pitch/day overlap check. Additional search/performance indexes should be based
+on measured API query patterns once endpoints exist.
+
+## Deferred cross-row constraints
+
+- Match duration options remain application validation for V1. The database
+  stores the resulting interval and keeps only the structural `starts_at <
+  ends_at` guard.
+- One active/upcoming match per group is deferred to a transactional service
+  because the approved definition is time-dependent.
+- Total refunds for a payment must not exceed the refundable amount, but exact
+  service-fee refund policy and provider behavior remain TBD. Enforce this in
+  payment/refund service logic first, and revisit database support after the
+  Stripe/refund strategy is finalized.
+- Booking confirmation side effects, including moving competing provisional
+  bookings to `lost` and creating required refunds, remain service-layer
+  workflow rules.
 
 ## Open/TBD decisions
 
@@ -797,17 +861,18 @@ phase.
 - Whether a dedicated idempotency table is needed for payment, refund, and
   booking-confirmation operations.
 
-## Recommended improvements before implementation
+## Remaining design and implementation follow-ups
 
-1. Define status-transition diagrams for matches, participants, bookings,
-   payments, and refunds before writing migrations.
-2. Decide the localization storage strategy for system-controlled labels and
+1. Decide the localization storage strategy for system-controlled labels and
    messages.
-3. Decide whether financial amounts should use integer minor units once the
-   payment provider is confirmed.
-4. Add an explicit idempotency strategy for external payment/refund callbacks
-   and booking confirmation retries.
-5. Decide the database enforcement mechanism for the approved
-   one-active/upcoming-match-per-group rule.
-6. Define the standard migration tool and database test strategy before
-   creating SQL.
+2. Revisit financial amount representation if payment-provider requirements
+   justify moving from `NUMERIC(10,2)` to integer minor units.
+3. Add an explicit idempotency strategy for booking confirmation, payment, and
+   refund workflows before implementing those services.
+4. Select the authentication provider and token model before authentication
+   implementation.
+5. Finalize payment/refund provider-specific design, including refund retry
+   linking, provider identifiers, webhook handling, and service-fee refund
+   policy.
+6. Resolve the remaining TBD business rules listed above before implementing
+   behavior that depends on them.

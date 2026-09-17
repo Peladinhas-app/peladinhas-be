@@ -3,6 +3,7 @@ package com.peladinhas.backend;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -61,10 +62,10 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
     }
 
     /**
-     * Verifies that Flyway builds the initial schema from an empty database.
+     * Verifies that Flyway builds the schema from an empty database.
      */
     @Test
-    void appliesInitialSchemaMigration() {
+    void appliesSchemaMigrations() {
         List<String> applicationTables = applicationTables();
         Integer successfulMigrations = jdbcTemplate.queryForObject("""
                 select count(*)
@@ -73,7 +74,50 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
                 """, Integer.class);
 
         assertThat(applicationTables).containsExactlyElementsOf(EXPECTED_APPLICATION_TABLES);
-        assertThat(successfulMigrations).isEqualTo(1);
+        assertThat(successfulMigrations).isEqualTo(2);
+    }
+
+    /**
+     * Verifies that advanced database constraints and representative indexes exist.
+     */
+    @Test
+    void createsAdvancedConstraintsAndIndexes() {
+        List<String> exclusionConstraints = jdbcTemplate.queryForList("""
+                select conname
+                from pg_constraint
+                where contype = 'x'
+                order by conname
+                """, String.class);
+        List<String> indexNames = jdbcTemplate.queryForList("""
+                select indexname
+                from pg_indexes
+                where schemaname = 'public'
+                order by indexname
+                """, String.class);
+        Integer btreeGistExtensions = jdbcTemplate.queryForObject("""
+                select count(*)
+                from pg_extension
+                where extname = 'btree_gist'
+                """, Integer.class);
+
+        assertThat(btreeGistExtensions).isEqualTo(1);
+        assertThat(exclusionConstraints)
+                .contains(
+                        "ex_bookings_confirmed_pitch_time_no_overlap",
+                        "ex_pitch_schedules_pitch_day_time_no_overlap");
+        assertThat(indexNames)
+                .contains(
+                        "idx_group_members_user_status",
+                        "idx_matches_group_status_time",
+                        "idx_match_participants_match_status",
+                        "idx_bookings_match",
+                        "idx_bookings_pitch_status_time",
+                        "idx_pitch_blocks_pitch_time",
+                        "idx_payments_participant_status",
+                        "idx_refunds_payment_status",
+                        "idx_chat_members_user",
+                        "idx_messages_chat_created_at",
+                        "idx_notifications_user_read_created");
     }
 
     /**
@@ -218,6 +262,239 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
     }
 
     /**
+     * Verifies that confirmed bookings cannot overlap for the same pitch.
+     */
+    @Test
+    void rejectsOverlappingConfirmedBookingsForSamePitch() {
+        GraphIds graph = insertGraph();
+        OffsetDateTime startsAt = OffsetDateTime.now().plusDays(3);
+
+        insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                graph.pitchId(),
+                startsAt,
+                startsAt.plusHours(1),
+                "confirmed");
+
+        assertThatThrownBy(() -> insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                graph.pitchId(),
+                startsAt.plusMinutes(30),
+                startsAt.plusMinutes(90),
+                "confirmed"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /**
+     * Verifies that adjacent confirmed bookings are allowed for one pitch.
+     */
+    @Test
+    void allowsAdjacentConfirmedBookingsForSamePitch() {
+        GraphIds graph = insertGraph();
+        OffsetDateTime startsAt = OffsetDateTime.now().plusDays(4);
+
+        insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                graph.pitchId(),
+                startsAt,
+                startsAt.plusHours(1),
+                "confirmed");
+        insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                graph.pitchId(),
+                startsAt.plusHours(1),
+                startsAt.plusHours(2),
+                "confirmed");
+
+        Integer confirmedBookings = jdbcTemplate.queryForObject("""
+                select count(*)
+                from bookings
+                where pitch_id = ? and status = 'confirmed'
+                """, Integer.class, graph.pitchId());
+
+        assertThat(confirmedBookings).isEqualTo(2);
+    }
+
+    /**
+     * Verifies that provisional bookings remain allowed to overlap.
+     */
+    @Test
+    void allowsOverlappingProvisionalBookingsForSamePitch() {
+        GraphIds graph = insertGraph();
+        OffsetDateTime startsAt = OffsetDateTime.now().plusDays(5);
+
+        insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                graph.pitchId(),
+                startsAt,
+                startsAt.plusHours(1),
+                "provisional");
+        insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                graph.pitchId(),
+                startsAt.plusMinutes(30),
+                startsAt.plusMinutes(90),
+                "provisional");
+
+        Integer provisionalBookings = jdbcTemplate.queryForObject("""
+                select count(*)
+                from bookings
+                where pitch_id = ? and status = 'provisional'
+                """, Integer.class, graph.pitchId());
+
+        assertThat(provisionalBookings).isEqualTo(3);
+    }
+
+    /**
+     * Verifies that provisional bookings may still overlap confirmed bookings.
+     */
+    @Test
+    void allowsProvisionalBookingOverlappingConfirmedBooking() {
+        GraphIds graph = insertGraph();
+        OffsetDateTime startsAt = OffsetDateTime.now().plusDays(6);
+
+        insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                graph.pitchId(),
+                startsAt,
+                startsAt.plusHours(1),
+                "confirmed");
+        insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                graph.pitchId(),
+                startsAt.plusMinutes(30),
+                startsAt.plusMinutes(90),
+                "provisional");
+
+        Integer bookingCount = jdbcTemplate.queryForObject("""
+                select count(*)
+                from bookings
+                where pitch_id = ?
+                """, Integer.class, graph.pitchId());
+
+        assertThat(bookingCount).isEqualTo(3);
+    }
+
+    /**
+     * Verifies that different pitches may have overlapping confirmed bookings.
+     */
+    @Test
+    void allowsOverlappingConfirmedBookingsForDifferentPitches() {
+        GraphIds graph = insertGraph();
+        UUID secondPitchId = UUID.randomUUID();
+        OffsetDateTime startsAt = OffsetDateTime.now().plusDays(7);
+
+        insertPitch(secondPitchId, graph.ownerUserId());
+        insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                graph.pitchId(),
+                startsAt,
+                startsAt.plusHours(1),
+                "confirmed");
+        insertBooking(
+                UUID.randomUUID(),
+                graph.matchId(),
+                secondPitchId,
+                startsAt.plusMinutes(30),
+                startsAt.plusMinutes(90),
+                "confirmed");
+
+        Integer confirmedBookings = jdbcTemplate.queryForObject("""
+                select count(*)
+                from bookings
+                where status = 'confirmed'
+                """, Integer.class);
+
+        assertThat(confirmedBookings).isEqualTo(2);
+    }
+
+    /**
+     * Verifies that recurring schedule windows cannot overlap for one pitch/day.
+     */
+    @Test
+    void rejectsOverlappingPitchSchedulesForSamePitchAndDay() {
+        GraphIds graph = insertGraph();
+
+        insertPitchSchedule(UUID.randomUUID(), graph.pitchId(), 1, LocalTime.of(18, 0), LocalTime.of(21, 0));
+
+        assertThatThrownBy(() -> insertPitchSchedule(
+                UUID.randomUUID(),
+                graph.pitchId(),
+                1,
+                LocalTime.of(20, 0),
+                LocalTime.of(23, 0)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /**
+     * Verifies that adjacent recurring schedule windows are allowed.
+     */
+    @Test
+    void allowsAdjacentPitchSchedulesForSamePitchAndDay() {
+        GraphIds graph = insertGraph();
+
+        insertPitchSchedule(UUID.randomUUID(), graph.pitchId(), 1, LocalTime.of(18, 0), LocalTime.of(20, 0));
+        insertPitchSchedule(UUID.randomUUID(), graph.pitchId(), 1, LocalTime.of(20, 0), LocalTime.of(23, 0));
+
+        Integer scheduleCount = jdbcTemplate.queryForObject("""
+                select count(*)
+                from pitch_schedules
+                where pitch_id = ? and day_of_week = 1
+                """, Integer.class, graph.pitchId());
+
+        assertThat(scheduleCount).isEqualTo(2);
+    }
+
+    /**
+     * Verifies that matching schedule hours are allowed on different pitches.
+     */
+    @Test
+    void allowsSamePitchScheduleHoursForDifferentPitches() {
+        GraphIds graph = insertGraph();
+        UUID secondPitchId = UUID.randomUUID();
+
+        insertPitch(secondPitchId, graph.ownerUserId());
+        insertPitchSchedule(UUID.randomUUID(), graph.pitchId(), 1, LocalTime.of(18, 0), LocalTime.of(21, 0));
+        insertPitchSchedule(UUID.randomUUID(), secondPitchId, 1, LocalTime.of(18, 0), LocalTime.of(21, 0));
+
+        Integer scheduleCount = jdbcTemplate.queryForObject("""
+                select count(*)
+                from pitch_schedules
+                where pitch_id in (?, ?) and day_of_week = 1
+                """, Integer.class, graph.pitchId(), secondPitchId);
+
+        assertThat(scheduleCount).isEqualTo(2);
+    }
+
+    /**
+     * Verifies that matching schedule hours are allowed on different days.
+     */
+    @Test
+    void allowsSamePitchScheduleHoursForDifferentDays() {
+        GraphIds graph = insertGraph();
+
+        insertPitchSchedule(UUID.randomUUID(), graph.pitchId(), 1, LocalTime.of(18, 0), LocalTime.of(21, 0));
+        insertPitchSchedule(UUID.randomUUID(), graph.pitchId(), 2, LocalTime.of(18, 0), LocalTime.of(21, 0));
+
+        Integer scheduleCount = jdbcTemplate.queryForObject("""
+                select count(*)
+                from pitch_schedules
+                where pitch_id = ?
+                """, Integer.class, graph.pitchId());
+
+        assertThat(scheduleCount).isEqualTo(2);
+    }
+
+    /**
      * Reads application tables without Flyway metadata.
      *
      * @return sorted table names created by Peladinhas migrations
@@ -346,13 +623,62 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
     private void insertBooking(final UUID bookingId, final UUID matchId, final UUID pitchId) {
         OffsetDateTime now = OffsetDateTime.now();
 
+        insertBooking(
+                bookingId,
+                matchId,
+                pitchId,
+                now.plusDays(1),
+                now.plusDays(1).plusHours(1),
+                "provisional");
+    }
+
+    /**
+     * Adds a booking row for booking-overlap tests.
+     *
+     * @param bookingId booking identifier
+     * @param matchId match identifier
+     * @param pitchId pitch identifier
+     * @param startsAt booked slot start
+     * @param endsAt booked slot end
+     * @param status approved booking status
+     */
+    private void insertBooking(
+            final UUID bookingId,
+            final UUID matchId,
+            final UUID pitchId,
+            final OffsetDateTime startsAt,
+            final OffsetDateTime endsAt,
+            final String status) {
+        OffsetDateTime now = OffsetDateTime.now();
+
         jdbcTemplate.update("""
                 insert into bookings (
                     id, match_id, pitch_id, starts_at, ends_at, total_price, currency,
                     status, created_at, updated_at
                 )
-                values (?, ?, ?, ?, ?, 60.00, 'EUR', 'provisional', ?, ?)
-                """, bookingId, matchId, pitchId, now.plusDays(1), now.plusDays(1).plusHours(1), now, now);
+                values (?, ?, ?, ?, ?, 60.00, 'EUR', ?, ?, ?)
+                """, bookingId, matchId, pitchId, startsAt, endsAt, status, now, now);
+    }
+
+    /**
+     * Adds a recurring schedule row for overlap tests.
+     *
+     * @param scheduleId schedule identifier
+     * @param pitchId pitch identifier
+     * @param dayOfWeek ISO-style day number from 1 to 7
+     * @param startsAt local opening time
+     * @param endsAt local closing time
+     */
+    private void insertPitchSchedule(
+            final UUID scheduleId,
+            final UUID pitchId,
+            final int dayOfWeek,
+            final LocalTime startsAt,
+            final LocalTime endsAt) {
+        jdbcTemplate.update("""
+                insert into pitch_schedules (id, pitch_id, day_of_week, starts_at, ends_at)
+                values (?, ?, ?, ?, ?)
+                """, scheduleId, pitchId, dayOfWeek, startsAt, endsAt);
     }
 
     /**
