@@ -119,6 +119,32 @@ as their approved English string values, never enum ordinals.
 `notifications.payload` is mapped as PostgreSQL `jsonb` to a Java
 `Map<String, Object>` using Hibernate's JSON support.
 
+## Service-layer conventions
+
+Business services live outside persistence packages, under domain-specific
+`service` packages such as `com.peladinhas.backend.domains.groups.service` and
+`com.peladinhas.backend.domains.matches.service`. Persistence entities remain
+database mappings; transactional workflows and status rules belong in services.
+
+Service methods define transaction boundaries with `@Transactional`. Core match
+creation locks the related group row with a PostgreSQL pessimistic write lock,
+then checks for an existing active/upcoming match before inserting the new
+match. This serializes competing match-creation transactions for the same
+group and enforces the V1 one-active/upcoming-match rule without a time-based
+database index.
+
+Business logic uses an injectable Java `Clock` bean instead of scattering
+direct current-time calls. Tests can replace the clock with a fixed value.
+
+Authorization is currently contextual and explicit because authentication is
+not implemented yet. Service methods receive acting user identifiers and check
+group-admin or match-admin relationships in the database.
+
+Deferred workflows remain intentionally out of the current service layer:
+booking confirmation, competing booking loss handling, payment-provider calls,
+refund workflows, deadlines, chat workflows, notification delivery, REST APIs,
+and Spring Security.
+
 ## Start PostgreSQL
 
 ```powershell
