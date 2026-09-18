@@ -17,6 +17,9 @@ public interface MatchRepository extends JpaRepository<MatchEntity, UUID> {
     @Query("select m from MatchEntity m where m.id = :id")
     Optional<MatchEntity> findByIdForUpdate(@Param("id") UUID id);
 
+    @Query("select m from MatchEntity m join fetch m.group g join fetch m.createdByUser where m.id = :id")
+    Optional<MatchEntity> findByIdWithSummary(@Param("id") UUID id);
+
     boolean existsByGroup_IdAndStatusInAndEndsAtAfter(
             UUID groupId,
             Collection<MatchStatus> statuses,

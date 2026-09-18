@@ -180,3 +180,75 @@ migrations.
 ```powershell
 docker compose down -v
 ```
+
+## REST API conventions
+
+The initial REST API lives under the versioned base path:
+
+```text
+http://localhost:8080/api/v1
+```
+
+HTTP controllers live in domain `web` packages such as
+`com.peladinhas.backend.domains.groups.web` and
+`com.peladinhas.backend.domains.matches.web`. Controllers should stay thin:
+they validate transport input, translate request objects to service commands,
+and translate service results to response objects. Business rules remain in the
+service layer.
+
+The first API phase exposes:
+
+- `POST /api/v1/groups`
+- `POST /api/v1/matches`
+- `POST /api/v1/matches/direct`
+- `GET /api/v1/matches/{matchId}`
+- `POST /api/v1/matches/{matchId}/join`
+- `POST /api/v1/matches/{matchId}/join-requests`
+- `POST /api/v1/matches/{matchId}/join-requests/{userId}/approve`
+- `POST /api/v1/matches/{matchId}/join-requests/{userId}/awaiting-payment`
+- `POST /api/v1/matches/{matchId}/join-requests/{userId}/reject`
+
+Request and response classes are explicit DTOs. JPA entities must not be
+returned directly from controllers.
+
+Authentication is not implemented yet. Until Spring Security and the final
+authentication provider are introduced, API requests explicitly include user
+identifiers such as `creatorUserId`, `userId`, and `actingAdminUserId`. These
+fields are temporary development inputs and must be replaced by authenticated
+user context in a later phase.
+
+API errors use a stable JSON shape:
+
+```json
+{
+  "code": "validation_failed",
+  "message": "Request validation failed.",
+  "timestamp": "2026-09-18T10:00:00Z",
+  "fieldErrors": [
+    {
+      "field": "name",
+      "message": "must not be blank"
+    }
+  ]
+}
+```
+
+`fieldErrors` is an empty list for non-field-specific errors. Error responses
+must not expose stack traces or internal exception details.
+
+## Local CORS
+
+The backend allows local development browser origins for `/api/v1/**` only:
+
+- `http://localhost:5173`
+- `http://127.0.0.1:5173`
+
+For local Flutter Web development, start the frontend on the fixed allowed port:
+
+```powershell
+flutter run -d chrome --web-port 5173
+```
+
+This explicit allowlist is temporary local-development configuration. It is not
+a production CORS policy, and production origins must be configured during a
+future deployment/security phase.

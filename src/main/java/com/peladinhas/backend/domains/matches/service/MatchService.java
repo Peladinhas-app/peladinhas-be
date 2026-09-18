@@ -111,6 +111,12 @@ public class MatchService {
     }
 
     @Transactional(readOnly = true)
+    public MatchEntity requireMatchSummary(final UUID matchId) {
+        return matchRepository.findByIdWithSummary(matchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Match was not found."));
+    }
+
+    @Transactional(readOnly = true)
     public MatchEntity requireMatch(final UUID matchId) {
         return matchRepository.findById(matchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Match was not found."));
