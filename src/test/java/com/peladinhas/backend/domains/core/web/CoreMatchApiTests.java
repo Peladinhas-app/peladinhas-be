@@ -21,12 +21,6 @@ import com.peladinhas.backend.domains.groups.persistence.GroupMemberRole;
 import com.peladinhas.backend.domains.groups.persistence.GroupMemberStatus;
 import com.peladinhas.backend.domains.groups.persistence.GroupRepository;
 import com.peladinhas.backend.domains.groups.persistence.GroupVisibility;
-import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
-import com.peladinhas.backend.domains.matches.persistence.MatchParticipantRepository;
-import com.peladinhas.backend.domains.matches.persistence.MatchParticipantStatus;
-import com.peladinhas.backend.domains.matches.persistence.MatchRepository;
-import com.peladinhas.backend.domains.matches.persistence.MatchStatus;
-import com.peladinhas.backend.domains.matches.service.MatchService;
 import com.peladinhas.backend.domains.users.persistence.PreferredLanguage;
 import com.peladinhas.backend.domains.users.persistence.UserEntity;
 import com.peladinhas.backend.domains.users.persistence.UserRepository;
@@ -42,8 +36,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.context.WebApplicationContext;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.context.WebApplicationContext;
 
 @ActiveProfiles("test")
 @SpringBootTest
@@ -59,15 +53,6 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
 
     @Autowired
     private GroupRepository groupRepository;
-
-    @Autowired
-    private MatchParticipantRepository participantRepository;
-
-    @Autowired
-    private MatchRepository matchRepository;
-
-    @Autowired
-    private MatchService matchService;
 
     private MockMvc mockMvc;
 
@@ -94,6 +79,7 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
     void setUpMockMvc() {
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
     }
+
     @Test
     void createGroupReturnsGroupAndCreatesCreatorAdmin() throws Exception {
         UserEntity creator = createUser();
@@ -201,6 +187,7 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
                 .andExpect(jsonPath("$.timestamp").exists())
                 .andExpect(jsonPath("$.fieldErrors").isArray());
     }
+
     @Test
     void createMatchReturnsCalculatedEndTime() throws Exception {
         UserEntity creator = createUser();
@@ -263,6 +250,71 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
                         .content(matchRequest(groupId, creator.getId(), 60, 10, "open_join")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("business_conflict"));
+    }
+
+    @Test
+    void transitionMatchStatusReturnsUpdatedMatch() throws Exception {
+        UserEntity creator = createUser();
+        UUID groupId = createGroup(creator);
+        UUID matchId = uuidAt(createMatch(groupId, creator.getId(), 60, 10, "open_join"), "id");
+
+        mockMvc.perform(post("/api/v1/matches/{matchId}/status-transitions", matchId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "actingAdminUserId", creator.getId(),
+                                "nextStatus", "recruiting"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(matchId.toString()))
+                .andExpect(jsonPath("$.status").value("recruiting"));
+    }
+
+    @Test
+    void nonAdminStatusTransitionReturnsForbidden() throws Exception {
+        UserEntity creator = createUser();
+        UserEntity nonAdmin = createUser();
+        UUID groupId = createGroup(creator);
+        UUID matchId = uuidAt(createMatch(groupId, creator.getId(), 60, 10, "open_join"), "id");
+
+        mockMvc.perform(post("/api/v1/matches/{matchId}/status-transitions", matchId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "actingAdminUserId", nonAdmin.getId(),
+                                "nextStatus", "recruiting"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("permission_denied"));
+    }
+
+    @Test
+    void invalidStatusTransitionReturnsConflict() throws Exception {
+        UserEntity creator = createUser();
+        UUID groupId = createGroup(creator);
+        UUID matchId = uuidAt(createMatch(groupId, creator.getId(), 60, 10, "open_join"), "id");
+
+        mockMvc.perform(post("/api/v1/matches/{matchId}/status-transitions", matchId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "actingAdminUserId", creator.getId(),
+                                "nextStatus", "completed"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("business_conflict"));
+    }
+
+    @Test
+    void malformedNextStatusReturnsStableBadRequest() throws Exception {
+        UserEntity creator = createUser();
+        UUID groupId = createGroup(creator);
+        UUID matchId = uuidAt(createMatch(groupId, creator.getId(), 60, 10, "open_join"), "id");
+
+        mockMvc.perform(post("/api/v1/matches/{matchId}/status-transitions", matchId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "actingAdminUserId", creator.getId(),
+                                "nextStatus", "warming_up"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("invalid_request"))
+                .andExpect(jsonPath("$.message").exists())
+                .andExpect(jsonPath("$.timestamp").exists())
+                .andExpect(jsonPath("$.fieldErrors").isArray());
     }
 
     @Test
@@ -385,8 +437,18 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
     private UUID createRecruitingMatch(final UserEntity creator, final String joinMode, final int maxPlayers) throws Exception {
         UUID groupId = createGroup(creator);
         UUID matchId = uuidAt(createMatch(groupId, creator.getId(), 60, maxPlayers, joinMode), "id");
-        matchService.transitionMatchStatus(matchId, creator.getId(), MatchStatus.RECRUITING);
+        transitionMatchToRecruiting(matchId, creator.getId());
         return matchId;
+    }
+
+    private void transitionMatchToRecruiting(final UUID matchId, final UUID actingAdminUserId) throws Exception {
+        mockMvc.perform(post("/api/v1/matches/{matchId}/status-transitions", matchId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "actingAdminUserId", actingAdminUserId,
+                                "nextStatus", "recruiting"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("recruiting"));
     }
 
     private UUID createGroup(final UserEntity creator) throws Exception {

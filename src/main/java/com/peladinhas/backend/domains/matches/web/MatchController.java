@@ -5,6 +5,7 @@ import java.util.UUID;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchJoinMode;
 import com.peladinhas.backend.domains.matches.persistence.MatchParticipantEntity;
+import com.peladinhas.backend.domains.matches.persistence.MatchStatus;
 import com.peladinhas.backend.domains.matches.service.CreateDirectMatchCommand;
 import com.peladinhas.backend.domains.matches.service.CreateMatchCommand;
 import com.peladinhas.backend.domains.matches.service.MatchParticipationService;
@@ -67,6 +68,15 @@ public class MatchController {
 
     @GetMapping("/{matchId}")
     public MatchResponse getMatch(@PathVariable final UUID matchId) {
+        return MatchResponse.from(matchService.requireMatchSummary(matchId));
+    }
+
+    @PostMapping("/{matchId}/status-transitions")
+    public MatchResponse transitionMatchStatus(
+            @PathVariable final UUID matchId,
+            @Valid @RequestBody final TransitionMatchStatusRequest request) {
+        MatchStatus nextStatus = ApiEnumParser.parse(MatchStatus.class, request.nextStatus(), "nextStatus");
+        matchService.transitionMatchStatus(matchId, request.actingAdminUserId(), nextStatus);
         return MatchResponse.from(matchService.requireMatchSummary(matchId));
     }
 
