@@ -9,7 +9,6 @@ import jakarta.validation.constraints.Positive;
 
 public record CreateMatchRequest(
         @NotNull UUID groupId,
-        @NotNull UUID creatorUserId,
         @NotNull OffsetDateTime startsAt,
         @NotNull @Positive Integer durationMinutes,
         @NotNull @Positive Integer maxPlayers,

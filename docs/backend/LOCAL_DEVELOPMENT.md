@@ -166,11 +166,12 @@ is still required so the backend validates the expected token issuer. Tokens
 must also contain the configured audience, which defaults to Supabase's
 `authenticated` audience for signed-in users.
 
-Existing REST endpoints are now protected, but they still include temporary
-identity fields such as `creatorUserId`, `userId`, and `actingAdminUserId`.
-Those fields will be migrated to authenticated current-user context in the next
-API phase. Domain services should continue receiving internal Peladinhas user
-UUIDs, not Supabase SDK objects or JWT objects.
+The core group and match REST API now resolves the acting user from the
+authenticated current user. Request fields such as `creatorUserId`, caller
+`userId`, and `actingAdminUserId` have been retired from migrated endpoints.
+Target user identifiers remain in paths where they identify another participant,
+such as `/join-requests/{userId}/approve`. Domain services continue receiving
+internal Peladinhas user UUIDs, not Supabase SDK objects or JWT objects.
 
 ## Start PostgreSQL
 
@@ -223,26 +224,85 @@ they validate transport input, translate request objects to service commands,
 and translate service results to response objects. Business rules remain in the
 service layer.
 
-The first API phase exposes:
+The current core API exposes:
 
 - `POST /api/v1/groups`
 - `POST /api/v1/matches`
 - `POST /api/v1/matches/direct`
 - `GET /api/v1/matches/{matchId}`
+- `POST /api/v1/matches/{matchId}/status-transitions`
 - `POST /api/v1/matches/{matchId}/join`
 - `POST /api/v1/matches/{matchId}/join-requests`
 - `POST /api/v1/matches/{matchId}/join-requests/{userId}/approve`
-- `POST /api/v1/matches/{matchId}/join-requests/{userId}/awaiting-payment`
 - `POST /api/v1/matches/{matchId}/join-requests/{userId}/reject`
 
 Request and response classes are explicit DTOs. JPA entities must not be
 returned directly from controllers.
 
-Authentication is implemented as a backend foundation, but the existing API
-contract has not yet been migrated away from explicit user identifiers. For
-now, requests still include fields such as `creatorUserId`, `userId`, and
-`actingAdminUserId`. These fields are temporary development inputs and must be
-replaced by authenticated user context in a later phase.
+The acting user comes exclusively from authentication. Request bodies therefore
+omit caller identity fields:
+
+`POST /api/v1/groups`:
+
+```json
+{
+  "name": "Friday Football",
+  "description": "Weekly match group",
+  "visibility": "private"
+}
+```
+
+`POST /api/v1/matches`:
+
+```json
+{
+  "groupId": "00000000-0000-4000-8000-000000000001",
+  "startsAt": "2026-09-19T19:00:00Z",
+  "durationMinutes": 90,
+  "maxPlayers": 10,
+  "joinMode": "open_join",
+  "publicVacanciesEnabled": true
+}
+```
+
+`POST /api/v1/matches/direct`:
+
+```json
+{
+  "groupName": "Friday Football",
+  "groupDescription": "Weekly match group",
+  "startsAt": "2026-09-19T19:00:00Z",
+  "durationMinutes": 90,
+  "maxPlayers": 10,
+  "joinMode": "request_to_join",
+  "publicVacanciesEnabled": true
+}
+```
+
+`POST /api/v1/matches/{matchId}/status-transitions`:
+
+```json
+{
+  "nextStatus": "recruiting"
+}
+```
+
+`POST /api/v1/matches/{matchId}/join` and
+`POST /api/v1/matches/{matchId}/join-requests` do not require request bodies.
+The authenticated user joins or requests to join as themselves.
+
+`POST /api/v1/matches/{matchId}/join-requests/{userId}/approve` and
+`POST /api/v1/matches/{matchId}/join-requests/{userId}/reject` do not require
+request bodies. The path `userId` identifies the target participant; the acting
+admin comes from authentication.
+
+Unknown JSON fields are rejected with a stable `400 invalid_request` response,
+which prevents obsolete caller identity fields from being silently accepted.
+
+The previous `approved -> awaiting_payment` HTTP endpoint is intentionally not
+exposed while the correct system/payment actor remains unresolved. The service
+transition remains available for a future payment workflow with the correct
+authorization boundary.
 
 API errors use a stable JSON shape:
 

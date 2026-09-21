@@ -54,15 +54,31 @@ The intended flow is:
 Email verification is required before public use. Password recovery is V1 scope
 before public use, but it is not part of this first backend security slice.
 
-## Temporary API Identity Fields
+## Authenticated API Identity
 
-The current group and match REST API still accepts explicit identity fields such
-as `creatorUserId`, `userId`, and `actingAdminUserId`.
+The group and match REST API now resolves the acting user exclusively from the
+validated bearer token through `CurrentUserService`.
 
-These fields are temporary until the next API migration phase. At that point,
-caller identities should come from the authenticated current user. Target
-identifiers remain in paths or request bodies where appropriate, for example the
-target participant in `/join-requests/{userId}/approve`.
+The migrated endpoints no longer accept caller identity fields such as
+`creatorUserId`, `userId` for the caller, or `actingAdminUserId`. A client must
+not be trusted to tell the backend who is acting. Unknown JSON fields are
+rejected, so obsolete identity fields on request DTOs produce a stable
+`400 invalid_request` response.
+
+Target identifiers remain in paths where they identify a resource or another
+user. For example, `/join-requests/{userId}/approve` keeps `{userId}` because it
+identifies the target participant. The acting admin still comes from the
+authenticated current user and is checked by contextual domain authorization.
+
+## Pending Auth-Adjacent API Work
+
+The `approved -> awaiting_payment` participant transition is documented as a
+system-driven status transition. Until the payment/system workflow defines the
+correct actor and authorization boundary, there is no public REST endpoint for
+moving another participant to `awaiting_payment`.
+
+The profile completion endpoint, Flutter Supabase login flow, password recovery,
+and email verification user experience remain future work.
 
 ## Configuration
 

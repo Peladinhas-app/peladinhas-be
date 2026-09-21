@@ -2,6 +2,7 @@ package com.peladinhas.backend.domains.matches.web;
 
 import java.util.UUID;
 
+import com.peladinhas.backend.auth.CurrentUserService;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchJoinMode;
 import com.peladinhas.backend.domains.matches.persistence.MatchParticipantEntity;
@@ -25,12 +26,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/matches")
 public class MatchController {
 
+    private final CurrentUserService currentUserService;
     private final MatchParticipationService participationService;
     private final MatchService matchService;
 
     public MatchController(
+            final CurrentUserService currentUserService,
             final MatchParticipationService participationService,
             final MatchService matchService) {
+        this.currentUserService = currentUserService;
         this.participationService = participationService;
         this.matchService = matchService;
     }
@@ -38,10 +42,11 @@ public class MatchController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public MatchResponse createMatch(@Valid @RequestBody final CreateMatchRequest request) {
+        UUID currentUserId = currentUserService.requireCurrentUserId();
         MatchJoinMode joinMode = ApiEnumParser.parse(MatchJoinMode.class, request.joinMode(), "joinMode");
         MatchEntity match = matchService.createMatch(new CreateMatchCommand(
                 request.groupId(),
-                request.creatorUserId(),
+                currentUserId,
                 request.startsAt(),
                 request.durationMinutes(),
                 request.maxPlayers(),
@@ -53,9 +58,10 @@ public class MatchController {
     @PostMapping("/direct")
     @ResponseStatus(HttpStatus.CREATED)
     public MatchResponse createDirectMatch(@Valid @RequestBody final CreateDirectMatchRequest request) {
+        UUID currentUserId = currentUserService.requireCurrentUserId();
         MatchJoinMode joinMode = ApiEnumParser.parse(MatchJoinMode.class, request.joinMode(), "joinMode");
         MatchEntity match = matchService.createDirectMatch(new CreateDirectMatchCommand(
-                request.creatorUserId(),
+                currentUserId,
                 request.groupName(),
                 request.groupDescription(),
                 request.startsAt(),
@@ -75,57 +81,48 @@ public class MatchController {
     public MatchResponse transitionMatchStatus(
             @PathVariable final UUID matchId,
             @Valid @RequestBody final TransitionMatchStatusRequest request) {
+        UUID currentUserId = currentUserService.requireCurrentUserId();
         MatchStatus nextStatus = ApiEnumParser.parse(MatchStatus.class, request.nextStatus(), "nextStatus");
-        matchService.transitionMatchStatus(matchId, request.actingAdminUserId(), nextStatus);
+        matchService.transitionMatchStatus(matchId, currentUserId, nextStatus);
         return MatchResponse.from(matchService.requireMatchSummary(matchId));
     }
 
     @PostMapping("/{matchId}/join")
-    public ParticipantResponse joinOpenMatch(
-            @PathVariable final UUID matchId,
-            @Valid @RequestBody final JoinMatchRequest request) {
-        MatchParticipantEntity participant = participationService.joinOpenMatch(matchId, request.userId());
+    public ParticipantResponse joinOpenMatch(@PathVariable final UUID matchId) {
+        MatchParticipantEntity participant = participationService.joinOpenMatch(
+                matchId,
+                currentUserService.requireCurrentUserId());
         return ParticipantResponse.from(participant);
     }
 
     @PostMapping("/{matchId}/join-requests")
     @ResponseStatus(HttpStatus.CREATED)
-    public ParticipantResponse requestToJoin(
-            @PathVariable final UUID matchId,
-            @Valid @RequestBody final JoinMatchRequest request) {
-        MatchParticipantEntity participant = participationService.requestToJoin(matchId, request.userId());
+    public ParticipantResponse requestToJoin(@PathVariable final UUID matchId) {
+        MatchParticipantEntity participant = participationService.requestToJoin(
+                matchId,
+                currentUserService.requireCurrentUserId());
         return ParticipantResponse.from(participant);
     }
 
     @PostMapping("/{matchId}/join-requests/{userId}/approve")
     public ParticipantResponse approveJoinRequest(
             @PathVariable final UUID matchId,
-            @PathVariable final UUID userId,
-            @Valid @RequestBody final AdminActionRequest request) {
+            @PathVariable final UUID userId) {
         MatchParticipantEntity participant = participationService.approveRequest(
                 matchId,
                 userId,
-                request.actingAdminUserId());
-        return ParticipantResponse.from(participant);
-    }
-
-    @PostMapping("/{matchId}/join-requests/{userId}/awaiting-payment")
-    public ParticipantResponse moveApprovedRequestToAwaitingPayment(
-            @PathVariable final UUID matchId,
-            @PathVariable final UUID userId) {
-        MatchParticipantEntity participant = participationService.moveApprovedToAwaitingPayment(matchId, userId);
+                currentUserService.requireCurrentUserId());
         return ParticipantResponse.from(participant);
     }
 
     @PostMapping("/{matchId}/join-requests/{userId}/reject")
     public ParticipantResponse rejectJoinRequest(
             @PathVariable final UUID matchId,
-            @PathVariable final UUID userId,
-            @Valid @RequestBody final AdminActionRequest request) {
+            @PathVariable final UUID userId) {
         MatchParticipantEntity participant = participationService.rejectRequest(
                 matchId,
                 userId,
-                request.actingAdminUserId());
+                currentUserService.requireCurrentUserId());
         return ParticipantResponse.from(participant);
     }
 }

@@ -1,5 +1,6 @@
 package com.peladinhas.backend.domains.groups.web;
 
+import com.peladinhas.backend.auth.CurrentUserService;
 import com.peladinhas.backend.domains.groups.persistence.GroupEntity;
 import com.peladinhas.backend.domains.groups.persistence.GroupVisibility;
 import com.peladinhas.backend.domains.groups.service.CreateGroupCommand;
@@ -17,9 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/groups")
 public class GroupController {
 
+    private final CurrentUserService currentUserService;
     private final GroupService groupService;
 
-    public GroupController(final GroupService groupService) {
+    public GroupController(
+            final CurrentUserService currentUserService,
+            final GroupService groupService) {
+        this.currentUserService = currentUserService;
         this.groupService = groupService;
     }
 
@@ -31,7 +36,7 @@ public class GroupController {
                 request.name(),
                 request.description(),
                 visibility,
-                request.creatorUserId()));
+                currentUserService.requireCurrentUserId()));
         return GroupResponse.from(group);
     }
 }
