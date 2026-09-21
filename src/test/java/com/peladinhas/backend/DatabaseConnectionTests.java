@@ -74,7 +74,7 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
                 """, Integer.class);
 
         assertThat(applicationTables).containsExactlyElementsOf(EXPECTED_APPLICATION_TABLES);
-        assertThat(successfulMigrations).isEqualTo(2);
+        assertThat(successfulMigrations).isEqualTo(3);
     }
 
     /**
@@ -541,9 +541,12 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
         OffsetDateTime now = OffsetDateTime.now();
 
         jdbcTemplate.update("""
-                insert into users (id, email, name, preferred_language, created_at, updated_at)
-                values (?, ?, 'Test User', 'en', ?, ?)
-                """, userId, email, now, now);
+                insert into users (
+                    id, email, name, preferred_language, auth_provider,
+                    auth_subject, created_at, updated_at
+                )
+                values (?, ?, 'Test User', 'en', 'test', ?, ?, ?)
+                """, userId, email, userId.toString(), now, now);
     }
 
     /**

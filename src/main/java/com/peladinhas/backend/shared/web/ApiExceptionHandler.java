@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+import com.peladinhas.backend.auth.AuthenticatedUserNotFoundException;
 import com.peladinhas.backend.domains.matches.service.ActiveUpcomingMatchExistsException;
 import com.peladinhas.backend.domains.matches.service.InvalidMatchTransitionException;
 import com.peladinhas.backend.domains.matches.service.InvalidParticipantTransitionException;
@@ -39,6 +40,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ContextualPermissionDeniedException.class)
     ResponseEntity<ApiErrorResponse> handleForbidden(final ContextualPermissionDeniedException exception) {
         return error(HttpStatus.FORBIDDEN, "permission_denied", exception.getMessage(), List.of());
+    }
+
+    @ExceptionHandler(AuthenticatedUserNotFoundException.class)
+    ResponseEntity<ApiErrorResponse> handleAuthenticatedUserNotFound(
+            final AuthenticatedUserNotFoundException exception) {
+        return error(HttpStatus.FORBIDDEN, "authenticated_user_not_found", exception.getMessage(), List.of());
     }
 
     @ExceptionHandler({

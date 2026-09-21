@@ -136,14 +136,41 @@ database index.
 Business logic uses an injectable Java `Clock` bean instead of scattering
 direct current-time calls. Tests can replace the clock with a fixed value.
 
-Authorization is currently contextual and explicit because authentication is
-not implemented yet. Service methods receive acting user identifiers and check
-group-admin or match-admin relationships in the database.
+Authorization remains contextual and explicit in domain services. Service
+methods receive internal Peladinhas user identifiers and check group-admin or
+match-admin relationships in the database.
 
 Deferred workflows remain intentionally out of the current service layer:
 booking confirmation, competing booking loss handling, payment-provider calls,
-refund workflows, deadlines, chat workflows, notification delivery, REST APIs,
-and Spring Security.
+refund workflows, deadlines, chat workflows, and notification delivery.
+
+## Authentication foundation
+
+Supabase Auth is the approved V1 authentication provider. The backend validates
+bearer tokens as a Spring Security OAuth2 resource server, then maps the token
+subject to a local Peladinhas user through `users.auth_provider` and
+`users.auth_subject`.
+
+Local and deployment environments configure token validation with:
+
+- `PELADINHAS_AUTH_PROVIDER`, default `supabase`
+- `PELADINHAS_AUTH_ISSUER_URI`
+- `PELADINHAS_AUTH_JWK_SET_URI`
+- `PELADINHAS_AUTH_AUDIENCE`, default `authenticated`
+
+Do not commit Supabase project URLs, secrets, or signing material. If neither
+issuer nor JSON Web Key Set URL is configured, the application can start but
+authenticated API calls are rejected because JWT verification is unavailable.
+When a JSON Web Key Set URL is supplied explicitly, `PELADINHAS_AUTH_ISSUER_URI`
+is still required so the backend validates the expected token issuer. Tokens
+must also contain the configured audience, which defaults to Supabase's
+`authenticated` audience for signed-in users.
+
+Existing REST endpoints are now protected, but they still include temporary
+identity fields such as `creatorUserId`, `userId`, and `actingAdminUserId`.
+Those fields will be migrated to authenticated current-user context in the next
+API phase. Domain services should continue receiving internal Peladinhas user
+UUIDs, not Supabase SDK objects or JWT objects.
 
 ## Start PostgreSQL
 
@@ -211,11 +238,11 @@ The first API phase exposes:
 Request and response classes are explicit DTOs. JPA entities must not be
 returned directly from controllers.
 
-Authentication is not implemented yet. Until Spring Security and the final
-authentication provider are introduced, API requests explicitly include user
-identifiers such as `creatorUserId`, `userId`, and `actingAdminUserId`. These
-fields are temporary development inputs and must be replaced by authenticated
-user context in a later phase.
+Authentication is implemented as a backend foundation, but the existing API
+contract has not yet been migrated away from explicit user identifiers. For
+now, requests still include fields such as `creatorUserId`, `userId`, and
+`actingAdminUserId`. These fields are temporary development inputs and must be
+replaced by authenticated user context in a later phase.
 
 API errors use a stable JSON shape:
 

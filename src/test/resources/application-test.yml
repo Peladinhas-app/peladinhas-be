@@ -8,3 +8,9 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+peladinhas:
+  auth:
+    provider: supabase
+    issuer-uri:
+    jwk-set-uri:
+    audience: authenticated

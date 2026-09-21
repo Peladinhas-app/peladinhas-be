@@ -185,6 +185,8 @@ class JpaPersistenceTests extends PostgreSqlContainerTest {
         user.setEmail("jpa-%s@example.test".formatted(user.getId()));
         user.setName("JPA User");
         user.setPreferredLanguage(PreferredLanguage.ENGLISH);
+        user.setAuthProvider("test");
+        user.setAuthSubject(user.getId().toString());
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         return userRepository.save(user);

@@ -25,6 +25,12 @@ public class UserEntity extends AbstractUuidEntity {
     @Column(name = "profile_image_url", columnDefinition = "text")
     private String profileImageUrl;
 
+    @Column(name = "auth_provider", nullable = false, columnDefinition = "varchar")
+    private String authProvider;
+
+    @Column(name = "auth_subject", nullable = false, columnDefinition = "varchar")
+    private String authSubject;
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamptz")
     private OffsetDateTime createdAt;
 
@@ -61,6 +67,22 @@ public class UserEntity extends AbstractUuidEntity {
 
     public void setProfileImageUrl(final String profileImageUrl) {
         this.profileImageUrl = profileImageUrl;
+    }
+
+    public String getAuthProvider() {
+        return authProvider;
+    }
+
+    public void setAuthProvider(final String authProvider) {
+        this.authProvider = authProvider;
+    }
+
+    public String getAuthSubject() {
+        return authSubject;
+    }
+
+    public void setAuthSubject(final String authSubject) {
+        this.authSubject = authSubject;
     }
 
     public OffsetDateTime getCreatedAt() {

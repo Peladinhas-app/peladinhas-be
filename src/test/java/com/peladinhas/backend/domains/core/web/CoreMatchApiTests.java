@@ -3,6 +3,8 @@ package com.peladinhas.backend.domains.core.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -77,7 +79,10 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
 
     @BeforeEach
     void setUpMockMvc() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
+        mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
+                .apply(springSecurity())
+                .defaultRequest(get("/").with(jwt().jwt(token -> token.subject("api-test-subject"))))
+                .build();
     }
 
     @Test
@@ -471,6 +476,8 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
         user.setEmail(uniqueName("user") + "@example.test");
         user.setName(uniqueName("User"));
         user.setPreferredLanguage(PreferredLanguage.ENGLISH);
+        user.setAuthProvider("test");
+        user.setAuthSubject(user.getId().toString());
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         return userRepository.save(user);

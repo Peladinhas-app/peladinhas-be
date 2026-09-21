@@ -95,14 +95,23 @@ records.
 | `name` | `VARCHAR` | yes |  | Proper name; do not translate. |
 | `preferred_language` | `VARCHAR` | yes |  | Values: `pt`, `en`. |
 | `profile_image_url` | `TEXT` | no |  | External object URL/path/reference. |
+| `auth_provider` | `VARCHAR` | yes | UNIQUE with `auth_subject` | External authentication provider identifier. |
+| `auth_subject` | `VARCHAR` | yes | UNIQUE with `auth_provider` | Provider-side authenticated subject. |
 | `created_at` | `TIMESTAMPTZ` | yes |  | Creation timestamp. |
 | `updated_at` | `TIMESTAMPTZ` | yes |  | Last update timestamp. |
 
 Important constraints:
 
 - `email` unique.
+- `(auth_provider, auth_subject)` unique.
 - `preferred_language IN ('pt', 'en')`.
-- No `password_hash` in v0.1 because the authentication provider is TBD.
+- No `password_hash`; V1 authentication is handled by Supabase Auth.
+- `users.id` remains the internal Peladinhas user identifier and is not the
+  Supabase user UUID.
+- For Supabase users, `auth_provider = 'supabase'` and `auth_subject` stores
+  the validated JWT subject.
+- Existing local development rows may use `auth_provider = 'development'` so
+  they are not confused with real Supabase identities.
 
 ### groups
 
@@ -841,7 +850,6 @@ on measured API query patterns once endpoints exist.
 
 ## Open/TBD decisions
 
-- Authentication provider.
 - Exact service fee.
 - Whether service fee applies only to initial payment or also to top-ups.
 - Refund deadline.

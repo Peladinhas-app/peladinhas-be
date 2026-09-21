@@ -13,3 +13,9 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+peladinhas:
+  auth:
+    provider: ${PELADINHAS_AUTH_PROVIDER:supabase}
+    issuer-uri: ${PELADINHAS_AUTH_ISSUER_URI:}
+    jwk-set-uri: ${PELADINHAS_AUTH_JWK_SET_URI:}
+    audience: ${PELADINHAS_AUTH_AUDIENCE:authenticated}

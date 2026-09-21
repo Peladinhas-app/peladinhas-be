@@ -569,6 +569,8 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
         user.setEmail(uniqueName("user") + "@example.test");
         user.setName(uniqueName("User"));
         user.setPreferredLanguage(PreferredLanguage.ENGLISH);
+        user.setAuthProvider("test");
+        user.setAuthSubject(user.getId().toString());
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         return userRepository.save(user);
