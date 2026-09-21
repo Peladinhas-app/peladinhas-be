@@ -1,0 +1,115 @@
+package com.peladinhas.backend.domains.pitches.service;
+
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.UUID;
+
+import com.peladinhas.backend.domains.pitches.persistence.PitchEntity;
+import com.peladinhas.backend.domains.pitches.persistence.PitchRepository;
+import com.peladinhas.backend.domains.users.persistence.UserEntity;
+import com.peladinhas.backend.domains.users.persistence.UserRepository;
+import com.peladinhas.backend.shared.domain.ContextualPermissionDeniedException;
+import com.peladinhas.backend.shared.domain.DomainException;
+import com.peladinhas.backend.shared.domain.ResourceNotFoundException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class PitchService {
+
+    private final Clock clock;
+    private final PitchRepository pitchRepository;
+    private final UserRepository userRepository;
+
+    public PitchService(
+            final Clock clock,
+            final PitchRepository pitchRepository,
+            final UserRepository userRepository) {
+        this.clock = clock;
+        this.pitchRepository = pitchRepository;
+        this.userRepository = userRepository;
+    }
+
+    @Transactional
+    public PitchEntity createPitch(final CreatePitchCommand command) {
+        UserEntity owner = requireUser(command.ownerUserId());
+        validatePitchFields(command.latitude(), command.longitude(), command.timezone());
+        OffsetDateTime now = OffsetDateTime.now(clock);
+
+        PitchEntity pitch = new PitchEntity();
+        pitch.setId(UUID.randomUUID());
+        pitch.setOwnerUser(owner);
+        pitch.setName(command.name());
+        pitch.setDescription(command.description());
+        pitch.setAddress(command.address());
+        pitch.setLatitude(command.latitude());
+        pitch.setLongitude(command.longitude());
+        pitch.setTimezone(command.timezone());
+        pitch.setBasePrice(command.basePrice());
+        pitch.setCurrency(command.currency());
+        pitch.setActive(command.active());
+        pitch.setCreatedAt(now);
+        pitch.setUpdatedAt(now);
+        return pitchRepository.save(pitch);
+    }
+
+    @Transactional
+    public PitchEntity updatePitch(
+            final UUID pitchId,
+            final UUID actingUserId,
+            final UpdatePitchCommand command) {
+        PitchEntity pitch = requireOwnedPitch(pitchId, actingUserId);
+        validatePitchFields(command.latitude(), command.longitude(), command.timezone());
+        pitch.setName(command.name());
+        pitch.setDescription(command.description());
+        pitch.setAddress(command.address());
+        pitch.setLatitude(command.latitude());
+        pitch.setLongitude(command.longitude());
+        pitch.setTimezone(command.timezone());
+        pitch.setBasePrice(command.basePrice());
+        pitch.setCurrency(command.currency());
+        pitch.setActive(command.active());
+        pitch.setUpdatedAt(OffsetDateTime.now(clock));
+        return pitchRepository.save(pitch);
+    }
+
+    @Transactional(readOnly = true)
+    public PitchEntity requirePitch(final UUID pitchId) {
+        return pitchRepository.findById(pitchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pitch was not found."));
+    }
+
+    @Transactional(readOnly = true)
+    public PitchEntity requireOwnedPitch(final UUID pitchId, final UUID actingUserId) {
+        PitchEntity pitch = requirePitch(pitchId);
+        requirePitchOwner(pitch, actingUserId);
+        return pitch;
+    }
+
+    public void requirePitchOwner(final PitchEntity pitch, final UUID actingUserId) {
+        if (!pitch.getOwnerUser().getId().equals(actingUserId)) {
+            throw new ContextualPermissionDeniedException("User is not the pitch owner.");
+        }
+    }
+
+    private UserEntity requireUser(final UUID userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User was not found."));
+    }
+
+    private void validatePitchFields(
+            final BigDecimal latitude,
+            final BigDecimal longitude,
+            final String timezone) {
+        if ((latitude == null) != (longitude == null)) {
+            throw new DomainException("Latitude and longitude must be provided together.");
+        }
+        try {
+            ZoneId.of(timezone);
+        } catch (RuntimeException exception) {
+            throw new DomainException("Pitch timezone is not valid.");
+        }
+    }
+}
