@@ -31,6 +31,19 @@ public class CurrentUserService {
         return requireUser(identityFromSecurityContext());
     }
 
+    public AuthenticatedUserPrincipal principalFromSecurityContext() {
+        Jwt jwt = jwtFromSecurityContext();
+        String subject = jwt.getSubject();
+        if (subject == null || subject.isBlank()) {
+            throw new AuthenticationCredentialsNotFoundException("Authenticated JWT subject is required.");
+        }
+        String email = jwt.getClaimAsString("email");
+        if (email == null || email.isBlank()) {
+            throw new InvalidAuthenticatedEmailException("Authenticated email claim is required.");
+        }
+        return new AuthenticatedUserPrincipal(authProperties.providerOrDefault(), subject, email);
+    }
+
     @Transactional(readOnly = true)
     public UUID requireCurrentUserId() {
         return requireCurrentUser().getId();
@@ -44,16 +57,19 @@ public class CurrentUserService {
     }
 
     public AuthenticatedUserIdentity identityFromSecurityContext() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!(authentication instanceof JwtAuthenticationToken jwtAuthentication) || !authentication.isAuthenticated()) {
-            throw new AuthenticationCredentialsNotFoundException("Authenticated JWT principal is required.");
-        }
-
-        Jwt jwt = jwtAuthentication.getToken();
+        Jwt jwt = jwtFromSecurityContext();
         String subject = jwt.getSubject();
         if (subject == null || subject.isBlank()) {
             throw new AuthenticationCredentialsNotFoundException("Authenticated JWT subject is required.");
         }
         return new AuthenticatedUserIdentity(authProperties.providerOrDefault(), subject);
+    }
+
+    private Jwt jwtFromSecurityContext() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuthentication) || !authentication.isAuthenticated()) {
+            throw new AuthenticationCredentialsNotFoundException("Authenticated JWT principal is required.");
+        }
+        return jwtAuthentication.getToken();
     }
 }

@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import com.peladinhas.backend.auth.AuthenticatedUserNotFoundException;
+import com.peladinhas.backend.auth.InvalidAuthenticatedEmailException;
 import com.peladinhas.backend.domains.bookings.service.InvalidBookingTransitionException;
 import com.peladinhas.backend.domains.matches.service.ActiveUpcomingMatchExistsException;
 import com.peladinhas.backend.domains.matches.service.InvalidMatchTransitionException;
@@ -15,6 +16,7 @@ import com.peladinhas.backend.domains.matches.service.UnsupportedMatchDurationEx
 import com.peladinhas.backend.domains.pitches.service.InvalidPitchIntervalException;
 import com.peladinhas.backend.domains.pitches.service.PitchNotAvailableException;
 import com.peladinhas.backend.domains.pitches.service.PitchScheduleConflictException;
+import com.peladinhas.backend.domains.users.service.UserProfileConflictException;
 import com.peladinhas.backend.shared.domain.ContextualPermissionDeniedException;
 import com.peladinhas.backend.shared.domain.DomainException;
 import com.peladinhas.backend.shared.domain.ResourceNotFoundException;
@@ -53,6 +55,11 @@ public class ApiExceptionHandler {
         return error(HttpStatus.FORBIDDEN, "authenticated_user_not_found", exception.getMessage(), List.of());
     }
 
+    @ExceptionHandler(UserProfileConflictException.class)
+    ResponseEntity<ApiErrorResponse> handleUserProfileConflict(final UserProfileConflictException exception) {
+        return error(HttpStatus.CONFLICT, "profile_conflict", exception.getMessage(), List.of());
+    }
+
     @ExceptionHandler({
             ActiveUpcomingMatchExistsException.class,
             MatchCapacityReachedException.class,
@@ -76,6 +83,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler({
             UnsupportedMatchDurationException.class,
             InvalidPitchIntervalException.class,
+            InvalidAuthenticatedEmailException.class,
             InvalidApiRequestException.class
     })
     ResponseEntity<ApiErrorResponse> handleBadRequest(final DomainException exception) {
