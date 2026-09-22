@@ -5,12 +5,16 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import com.peladinhas.backend.auth.AuthenticatedUserNotFoundException;
+import com.peladinhas.backend.domains.bookings.service.InvalidBookingTransitionException;
 import com.peladinhas.backend.domains.matches.service.ActiveUpcomingMatchExistsException;
 import com.peladinhas.backend.domains.matches.service.InvalidMatchTransitionException;
 import com.peladinhas.backend.domains.matches.service.InvalidParticipantTransitionException;
 import com.peladinhas.backend.domains.matches.service.MatchCapacityReachedException;
 import com.peladinhas.backend.domains.matches.service.MatchNotAcceptingParticipantsException;
 import com.peladinhas.backend.domains.matches.service.UnsupportedMatchDurationException;
+import com.peladinhas.backend.domains.pitches.service.InvalidPitchIntervalException;
+import com.peladinhas.backend.domains.pitches.service.PitchNotAvailableException;
+import com.peladinhas.backend.domains.pitches.service.PitchScheduleConflictException;
 import com.peladinhas.backend.shared.domain.ContextualPermissionDeniedException;
 import com.peladinhas.backend.shared.domain.DomainException;
 import com.peladinhas.backend.shared.domain.ResourceNotFoundException;
@@ -19,6 +23,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -53,18 +58,35 @@ public class ApiExceptionHandler {
             MatchCapacityReachedException.class,
             InvalidMatchTransitionException.class,
             InvalidParticipantTransitionException.class,
+            InvalidBookingTransitionException.class,
             MatchNotAcceptingParticipantsException.class
     })
     ResponseEntity<ApiErrorResponse> handleConflict(final DomainException exception) {
         return error(HttpStatus.CONFLICT, "business_conflict", exception.getMessage(), List.of());
     }
 
-    @ExceptionHandler({UnsupportedMatchDurationException.class, InvalidApiRequestException.class})
+    @ExceptionHandler({
+            PitchNotAvailableException.class,
+            PitchScheduleConflictException.class
+    })
+    ResponseEntity<ApiErrorResponse> handlePitchConflict(final DomainException exception) {
+        return error(HttpStatus.CONFLICT, "business_conflict", exception.getMessage(), List.of());
+    }
+
+    @ExceptionHandler({
+            UnsupportedMatchDurationException.class,
+            InvalidPitchIntervalException.class,
+            InvalidApiRequestException.class
+    })
     ResponseEntity<ApiErrorResponse> handleBadRequest(final DomainException exception) {
         return error(HttpStatus.BAD_REQUEST, "invalid_request", exception.getMessage(), List.of());
     }
 
-    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
+    @ExceptionHandler({
+            HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class,
+            MissingServletRequestParameterException.class
+    })
     ResponseEntity<ApiErrorResponse> handleMalformedRequest(final Exception exception) {
         return error(HttpStatus.BAD_REQUEST, "invalid_request", "Request body or path value is invalid.", List.of());
     }

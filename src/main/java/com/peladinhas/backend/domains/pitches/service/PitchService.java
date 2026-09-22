@@ -19,6 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PitchService {
 
+    private static final BigDecimal MIN_LATITUDE = new BigDecimal("-90");
+    private static final BigDecimal MAX_LATITUDE = new BigDecimal("90");
+    private static final BigDecimal MIN_LONGITUDE = new BigDecimal("-180");
+    private static final BigDecimal MAX_LONGITUDE = new BigDecimal("180");
+
     private final Clock clock;
     private final PitchRepository pitchRepository;
     private final UserRepository userRepository;
@@ -77,7 +82,7 @@ public class PitchService {
 
     @Transactional(readOnly = true)
     public PitchEntity requirePitch(final UUID pitchId) {
-        return pitchRepository.findById(pitchId)
+        return pitchRepository.findWithOwnerUserById(pitchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Pitch was not found."));
     }
 
@@ -105,6 +110,12 @@ public class PitchService {
             final String timezone) {
         if ((latitude == null) != (longitude == null)) {
             throw new DomainException("Latitude and longitude must be provided together.");
+        }
+        if (latitude != null && (latitude.compareTo(MIN_LATITUDE) < 0 || latitude.compareTo(MAX_LATITUDE) > 0)) {
+            throw new DomainException("Pitch latitude must be between -90 and 90.");
+        }
+        if (longitude != null && (longitude.compareTo(MIN_LONGITUDE) < 0 || longitude.compareTo(MAX_LONGITUDE) > 0)) {
+            throw new DomainException("Pitch longitude must be between -180 and 180.");
         }
         try {
             ZoneId.of(timezone);

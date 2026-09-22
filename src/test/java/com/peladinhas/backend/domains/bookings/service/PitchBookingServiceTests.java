@@ -145,6 +145,26 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
         assertThat(adjacent.getStartsAt()).isEqualTo(LocalTime.of(11, 0));
     }
 
+
+    @Test
+    void pitchServiceRejectsCoordinatesOutsideApprovedRanges() {
+        UserEntity owner = createUser();
+
+        assertThat(createPitch(owner, true, new BigDecimal("-90"), new BigDecimal("-180")).getId()).isNotNull();
+        assertThat(createPitch(owner, true, new BigDecimal("90"), new BigDecimal("180")).getId()).isNotNull();
+        assertThatThrownBy(() -> createPitch(owner, true, new BigDecimal("-90.01"), BigDecimal.ZERO))
+                .isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> createPitch(owner, true, new BigDecimal("90.01"), BigDecimal.ZERO))
+                .isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> createPitch(owner, true, BigDecimal.ZERO, new BigDecimal("-180.01")))
+                .isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> createPitch(owner, true, BigDecimal.ZERO, new BigDecimal("180.01")))
+                .isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> createPitch(owner, true, new BigDecimal("38.7200"), null))
+                .isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> createPitch(owner, true, null, new BigDecimal("-9.1300")))
+                .isInstanceOf(DomainException.class);
+    }
     @Test
     void pitchBlocksAffectAvailabilityUsingHalfOpenIntervals() {
         UserEntity owner = createUser();
@@ -368,13 +388,21 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
     }
 
     private PitchEntity createPitch(final UserEntity owner, final boolean active) {
+        return createPitch(owner, active, new BigDecimal("38.7200"), new BigDecimal("-9.1300"));
+    }
+
+    private PitchEntity createPitch(
+            final UserEntity owner,
+            final boolean active,
+            final BigDecimal latitude,
+            final BigDecimal longitude) {
         return pitchService.createPitch(new CreatePitchCommand(
                 owner.getId(),
                 uniqueName("Pitch"),
                 "Pitch description",
                 "Lisbon",
-                new BigDecimal("38.7200"),
-                new BigDecimal("-9.1300"),
+                latitude,
+                longitude,
                 "Europe/Lisbon",
                 new BigDecimal("60.00"),
                 "EUR",
