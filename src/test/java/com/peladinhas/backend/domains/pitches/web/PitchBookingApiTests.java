@@ -32,8 +32,15 @@ import com.peladinhas.backend.domains.groups.persistence.GroupEntity;
 import com.peladinhas.backend.domains.groups.persistence.GroupVisibility;
 import com.peladinhas.backend.domains.groups.service.CreateGroupCommand;
 import com.peladinhas.backend.domains.groups.service.GroupService;
+import com.peladinhas.backend.domains.matches.persistence.MatchAdminEntity;
+import com.peladinhas.backend.domains.matches.persistence.MatchAdminId;
+import com.peladinhas.backend.domains.matches.persistence.MatchAdminRepository;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchJoinMode;
+import com.peladinhas.backend.domains.matches.persistence.MatchParticipantEntity;
+import com.peladinhas.backend.domains.matches.persistence.MatchParticipantRepository;
+import com.peladinhas.backend.domains.matches.persistence.MatchParticipantStatus;
+import com.peladinhas.backend.domains.matches.service.CreateDirectMatchCommand;
 import com.peladinhas.backend.domains.matches.service.CreateMatchCommand;
 import com.peladinhas.backend.domains.matches.service.MatchService;
 import com.peladinhas.backend.domains.pitches.persistence.PitchEntity;
@@ -85,6 +92,12 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
 
     @Autowired
     private MatchService matchService;
+
+    @Autowired
+    private MatchAdminRepository matchAdminRepository;
+
+    @Autowired
+    private MatchParticipantRepository matchParticipantRepository;
 
     private MockMvc mockMvc;
 
@@ -342,7 +355,7 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
         PitchEntity bookedPitch = createPitch(owner, true);
         createSchedule(bookedPitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
         MatchEntity match = createMatch(owner);
-        BookingEntity provisional = createBooking(match, bookedPitch, MONDAY_09_00, MONDAY_09_00.plusHours(1));
+        BookingEntity provisional = createBooking(match, bookedPitch);
         expectAvailability(bookedPitch.getId(), MONDAY_09_00.plusMinutes(30), MONDAY_09_00.plusMinutes(90), true, owner);
 
         provisional.setStatus(BookingStatus.CONFIRMED);
@@ -358,7 +371,7 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
         PitchEntity pitch = createPitch(owner, true);
         MatchEntity match = createMatch(owner);
         createSchedule(pitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
-        BookingEntity booking = createBooking(match, pitch, MONDAY_09_00, MONDAY_09_00.plusHours(1));
+        BookingEntity booking = createBooking(match, pitch);
 
         mockMvc.perform(post("/api/v1/bookings/{bookingId}/reject", booking.getId())
                         .with(jwtFor(owner))
@@ -384,7 +397,7 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
         PitchEntity pitch = createPitch(owner, true);
         MatchEntity match = createMatch(owner);
         createSchedule(pitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
-        BookingEntity booking = createBooking(match, pitch, MONDAY_09_00, MONDAY_09_00.plusHours(1));
+        BookingEntity booking = createBooking(match, pitch);
 
         mockMvc.perform(post("/api/v1/bookings/{bookingId}/reject", booking.getId())
                         .with(jwtFor(outsider))
@@ -415,14 +428,229 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
     }
 
     @Test
-    void provisionalBookingCreationEndpointIsNotExposedUntilActorRuleIsApproved() throws Exception {
-        UserEntity user = createUser();
+    void matchAdminCreatesProvisionalBookingAndObsoleteActorFieldCannotImpersonate() throws Exception {
+        UserEntity admin = createUser();
+        UserEntity spoofedAdmin = createUser();
+        PitchEntity pitch = createPitch(admin, true);
+        MatchEntity match = createMatch(admin);
+        createSchedule(pitch, admin, LocalTime.of(9, 0), LocalTime.of(12, 0));
+
+        MvcResult created = mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(match, pitch))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.matchId").value(match.getId().toString()))
+                .andExpect(jsonPath("$.pitchId").value(pitch.getId().toString()))
+                .andExpect(jsonPath("$.startsAt").value(match.getStartsAt().toInstant().toString()))
+                .andExpect(jsonPath("$.endsAt").value(match.getEndsAt().toInstant().toString()))
+                .andExpect(jsonPath("$.status").value("provisional"))
+                .andReturn();
+        assertThat(uuidAt(created, "id")).isNotNull();
+
+        Map<String, Object> impersonationBody = bookingRequest(match, pitch);
+        impersonationBody.put("actingUserId", spoofedAdmin.getId());
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(impersonationBody)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("invalid_request"));
+    }
+
+    @Test
+    void additionalMatchAdminMayCreateProvisionalBooking() throws Exception {
+        UserEntity creator = createUser();
+        UserEntity additionalAdmin = createUser();
+        PitchEntity pitch = createPitch(creator, true);
+        MatchEntity match = createMatch(creator);
+        addMatchAdmin(match, additionalAdmin);
+        createSchedule(pitch, creator, LocalTime.of(9, 0), LocalTime.of(12, 0));
 
         mockMvc.perform(post("/api/v1/bookings")
-                        .with(jwtFor(user))
+                        .with(jwtFor(additionalAdmin))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of())))
-                .andExpect(status().isNotFound());
+                        .content(json(bookingRequest(match, pitch))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("provisional"));
+    }
+
+    @Test
+    void directMatchCreatorCanCreateProvisionalBooking() throws Exception {
+        UserEntity creator = createUser();
+        PitchEntity pitch = createPitch(creator, true);
+        createSchedule(pitch, creator, LocalTime.of(9, 0), LocalTime.of(12, 0));
+        MatchEntity directMatch = matchService.createDirectMatch(new CreateDirectMatchCommand(
+                creator.getId(),
+                uniqueName("Direct Match Group"),
+                "Direct match group",
+                MONDAY_09_00,
+                60,
+                10,
+                MatchJoinMode.OPEN_JOIN,
+                true));
+
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(directMatch, pitch))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.matchId").value(directMatch.getId().toString()))
+                .andExpect(jsonPath("$.pitchId").value(pitch.getId().toString()))
+                .andExpect(jsonPath("$.startsAt").value(directMatch.getStartsAt().toInstant().toString()))
+                .andExpect(jsonPath("$.endsAt").value(directMatch.getEndsAt().toInstant().toString()))
+                .andExpect(jsonPath("$.status").value("provisional"));
+    }
+
+    @Test
+    void participantAndUnrelatedUserCannotCreateProvisionalBooking() throws Exception {
+        UserEntity admin = createUser();
+        UserEntity participant = createUser();
+        UserEntity unrelated = createUser();
+        PitchEntity pitch = createPitch(admin, true);
+        MatchEntity match = createMatch(admin);
+        createParticipant(match, participant);
+        createSchedule(pitch, admin, LocalTime.of(9, 0), LocalTime.of(12, 0));
+
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(participant))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(match, pitch))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("permission_denied"));
+
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(unrelated))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(match, pitch))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("permission_denied"));
+        assertThat(bookingRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void unauthenticatedBookingCreationReturnsUnauthorized() throws Exception {
+        UserEntity admin = createUser();
+        PitchEntity pitch = createPitch(admin, true);
+        MatchEntity match = createMatch(admin);
+
+        mockMvc.perform(post("/api/v1/bookings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(match, pitch))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("unauthenticated"));
+    }
+
+    @Test
+    void bookingCreationMapsAvailabilityAndIntervalFailures() throws Exception {
+        UserEntity admin = createUser();
+        PitchEntity pitch = createPitch(admin, true);
+        PitchEntity inactivePitch = createPitch(admin, false);
+        MatchEntity match = createMatch(admin);
+        MatchEntity outsideScheduleMatch = createMatch(admin, MONDAY_09_00.minusHours(1));
+        createSchedule(pitch, admin, LocalTime.of(9, 0), LocalTime.of(12, 0));
+        createSchedule(inactivePitch, admin, LocalTime.of(9, 0), LocalTime.of(12, 0));
+
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(outsideScheduleMatch, pitch))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("business_conflict"));
+
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(match, inactivePitch))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("business_conflict"));
+
+        BookingEntity confirmed = createBooking(match, pitch);
+        confirmed.setStatus(BookingStatus.CONFIRMED);
+        confirmed.setConfirmedAt(OffsetDateTime.now(FIXED_CLOCK));
+        bookingRepository.save(confirmed);
+        MatchEntity overlappingMatch = createMatch(admin, MONDAY_09_00.plusMinutes(30));
+
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(overlappingMatch, pitch))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("business_conflict"));
+
+        Map<String, Object> obsoleteInterval = bookingRequest(match, pitch);
+        obsoleteInterval.put("startsAt", MONDAY_09_00.plusHours(2));
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(obsoleteInterval)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("invalid_request"));
+    }
+
+    @Test
+    void bookingCreationAllowsProvisionalOverlap() throws Exception {
+        UserEntity admin = createUser();
+        PitchEntity pitch = createPitch(admin, true);
+        MatchEntity match = createMatch(admin);
+        MatchEntity overlappingMatch = createMatch(admin, MONDAY_09_00.plusMinutes(30));
+        createSchedule(pitch, admin, LocalTime.of(9, 0), LocalTime.of(12, 0));
+
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(match, pitch))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(bookingRequest(overlappingMatch, pitch))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("provisional"));
+    }
+
+    @Test
+    void malformedBookingCreationInputReturnsStableBadRequest() throws Exception {
+        UserEntity admin = createUser();
+        PitchEntity pitch = createPitch(admin, true);
+        MatchEntity match = createMatch(admin);
+
+        Map<String, Object> malformedUuid = bookingRequest(match, pitch);
+        malformedUuid.put("matchId", "not-a-uuid");
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(malformedUuid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("invalid_request"));
+
+        Map<String, Object> obsoleteDate = bookingRequest(match, pitch);
+        obsoleteDate.put("startsAt", "not-a-date");
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(obsoleteDate)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("invalid_request"));
+
+        Map<String, Object> malformedValue = bookingRequest(match, pitch);
+        malformedValue.put("totalPrice", "not-a-number");
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(malformedValue)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("invalid_request"));
+
+        Map<String, Object> invalidCurrency = bookingRequest(match, pitch);
+        invalidCurrency.put("currency", "eur");
+        mockMvc.perform(post("/api/v1/bookings")
+                        .with(jwtFor(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(invalidCurrency)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("validation_failed"));
     }
 
     private void expectInvalidPitchCoordinates(
@@ -502,18 +730,41 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
                 "note", "Pitch block");
     }
 
-    private BookingEntity createBooking(
-            final MatchEntity match,
-            final PitchEntity pitch,
-            final OffsetDateTime startsAt,
-            final OffsetDateTime endsAt) {
+    private BookingEntity createBooking(final MatchEntity match, final PitchEntity pitch) {
         return bookingService.createProvisionalBooking(new CreateProvisionalBookingCommand(
+                match.getCreatedByUser().getId(),
                 match.getId(),
                 pitch.getId(),
-                startsAt,
-                endsAt,
                 new BigDecimal("120.00"),
                 "EUR"));
+    }
+
+    private Map<String, Object> bookingRequest(final MatchEntity match, final PitchEntity pitch) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("matchId", match.getId());
+        request.put("pitchId", pitch.getId());
+        request.put("totalPrice", new BigDecimal("120.00"));
+        request.put("currency", "EUR");
+        return request;
+    }
+
+    private void addMatchAdmin(final MatchEntity match, final UserEntity user) {
+        MatchAdminEntity admin = new MatchAdminEntity();
+        admin.setId(new MatchAdminId(match.getId(), user.getId()));
+        admin.setMatch(match);
+        admin.setUser(user);
+        admin.setAssignedAt(OffsetDateTime.now(FIXED_CLOCK));
+        matchAdminRepository.save(admin);
+    }
+
+    private void createParticipant(final MatchEntity match, final UserEntity user) {
+        MatchParticipantEntity participant = new MatchParticipantEntity();
+        participant.setId(UUID.randomUUID());
+        participant.setMatch(match);
+        participant.setUser(user);
+        participant.setStatus(MatchParticipantStatus.AWAITING_PAYMENT);
+        participant.setJoinedAt(OffsetDateTime.now(FIXED_CLOCK));
+        matchParticipantRepository.save(participant);
     }
 
     private void createSchedule(
@@ -544,6 +795,10 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
     }
 
     private MatchEntity createMatch(final UserEntity creator) {
+        return createMatch(creator, MONDAY_09_00);
+    }
+
+    private MatchEntity createMatch(final UserEntity creator, final OffsetDateTime startsAt) {
         GroupEntity group = groupService.createGroup(new CreateGroupCommand(
                 uniqueName("Group"),
                 "Group description",
@@ -552,7 +807,7 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
         return matchService.createMatch(new CreateMatchCommand(
                 group.getId(),
                 creator.getId(),
-                MONDAY_09_00,
+                startsAt,
                 60,
                 10,
                 MatchJoinMode.OPEN_JOIN,

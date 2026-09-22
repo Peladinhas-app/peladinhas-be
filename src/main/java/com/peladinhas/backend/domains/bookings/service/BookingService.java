@@ -12,8 +12,8 @@ import com.peladinhas.backend.domains.bookings.persistence.BookingStatus;
 import com.peladinhas.backend.domains.bookings.persistence.BookingRepository;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchRepository;
+import com.peladinhas.backend.domains.matches.service.MatchService;
 import com.peladinhas.backend.domains.pitches.persistence.PitchEntity;
-import com.peladinhas.backend.domains.pitches.service.InvalidPitchIntervalException;
 import com.peladinhas.backend.domains.pitches.service.PitchAvailabilityService;
 import com.peladinhas.backend.domains.pitches.service.PitchService;
 import com.peladinhas.backend.shared.domain.DomainException;
@@ -27,6 +27,7 @@ public class BookingService {
     private final BookingRejectionRepository bookingRejectionRepository;
     private final BookingRepository bookingRepository;
     private final Clock clock;
+    private final MatchService matchService;
     private final MatchRepository matchRepository;
     private final PitchAvailabilityService pitchAvailabilityService;
     private final PitchService pitchService;
@@ -35,12 +36,14 @@ public class BookingService {
             final BookingRejectionRepository bookingRejectionRepository,
             final BookingRepository bookingRepository,
             final Clock clock,
+            final MatchService matchService,
             final MatchRepository matchRepository,
             final PitchAvailabilityService pitchAvailabilityService,
             final PitchService pitchService) {
         this.bookingRejectionRepository = bookingRejectionRepository;
         this.bookingRepository = bookingRepository;
         this.clock = clock;
+        this.matchService = matchService;
         this.matchRepository = matchRepository;
         this.pitchAvailabilityService = pitchAvailabilityService;
         this.pitchService = pitchService;
@@ -51,16 +54,19 @@ public class BookingService {
         validateBookingCommand(command);
         MatchEntity match = matchRepository.findById(command.matchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Match was not found."));
+        matchService.requireMatchAdmin(command.matchId(), command.actingUserId());
         PitchEntity pitch = pitchService.requirePitch(command.pitchId());
-        pitchAvailabilityService.requireAvailable(command.pitchId(), command.startsAt(), command.endsAt());
+        OffsetDateTime startsAt = match.getStartsAt();
+        OffsetDateTime endsAt = match.getEndsAt();
+        pitchAvailabilityService.requireAvailable(command.pitchId(), startsAt, endsAt);
         OffsetDateTime now = OffsetDateTime.now(clock);
 
         BookingEntity booking = new BookingEntity();
         booking.setId(UUID.randomUUID());
         booking.setMatch(match);
         booking.setPitch(pitch);
-        booking.setStartsAt(command.startsAt());
-        booking.setEndsAt(command.endsAt());
+        booking.setStartsAt(startsAt);
+        booking.setEndsAt(endsAt);
         booking.setTotalPrice(command.totalPrice());
         booking.setCurrency(command.currency());
         booking.setStatus(BookingStatus.PROVISIONAL);
@@ -95,11 +101,11 @@ public class BookingService {
     }
 
     private void validateBookingCommand(final CreateProvisionalBookingCommand command) {
-        if (command.startsAt() == null || command.endsAt() == null || !command.startsAt().isBefore(command.endsAt())) {
-            throw new InvalidPitchIntervalException("Booking time range is not valid.");
-        }
         if (command.totalPrice() == null || command.totalPrice().compareTo(BigDecimal.ZERO) < 0) {
             throw new DomainException("Booking total price must be zero or greater.");
+        }
+        if (command.currency() == null || !command.currency().matches("[A-Z]{3}")) {
+            throw new DomainException("Booking currency must be an uppercase three-letter code.");
         }
     }
 

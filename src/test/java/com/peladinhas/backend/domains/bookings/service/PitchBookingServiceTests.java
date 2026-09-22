@@ -194,7 +194,7 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
         assertThat(isAvailable(pitch, MONDAY_09_00, MONDAY_09_00.plusHours(1))).isTrue();
         assertThat(isAvailable(pitch, MONDAY_09_00.minusHours(1), MONDAY_09_00)).isFalse();
 
-        BookingEntity provisional = createBooking(match, pitch, MONDAY_09_00, MONDAY_09_00.plusHours(1));
+        BookingEntity provisional = createBooking(match, pitch);
         assertThat(provisional.getStatus()).isEqualTo(BookingStatus.PROVISIONAL);
         assertThat(isAvailable(pitch, MONDAY_09_00.plusMinutes(30), MONDAY_09_00.plusMinutes(90))).isTrue();
 
@@ -216,7 +216,7 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
 
         assertThat(isAvailable(activePitch, MONDAY_09_00, MONDAY_09_00.plusHours(1))).isTrue();
         assertThat(isAvailable(inactivePitch, MONDAY_09_00, MONDAY_09_00.plusHours(1))).isFalse();
-        assertThatThrownBy(() -> createBooking(match, inactivePitch, MONDAY_09_00, MONDAY_09_00.plusHours(1)))
+        assertThatThrownBy(() -> createBooking(match, inactivePitch))
                 .isInstanceOf(PitchNotAvailableException.class);
     }
 
@@ -225,21 +225,44 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
         UserEntity owner = createUser();
         PitchEntity pitch = createPitch(owner);
         MatchEntity firstMatch = createMatch(owner);
-        MatchEntity secondMatch = createMatch(createUser());
+        MatchEntity secondMatch = createMatch(createUser(), MONDAY_09_00.plusMinutes(30));
         createSchedule(pitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
 
-        BookingEntity first = createBooking(firstMatch, pitch, MONDAY_09_00, MONDAY_09_00.plusHours(1));
-        BookingEntity second = createBooking(secondMatch, pitch, MONDAY_09_00.plusMinutes(30), MONDAY_09_00.plusMinutes(90));
+        BookingEntity first = createBooking(firstMatch, pitch);
+        BookingEntity second = createBooking(secondMatch, pitch);
 
         assertThat(first.getStatus()).isEqualTo(BookingStatus.PROVISIONAL);
+        assertThat(first.getStartsAt()).isEqualTo(firstMatch.getStartsAt());
+        assertThat(first.getEndsAt()).isEqualTo(firstMatch.getEndsAt());
         assertThat(second.getStatus()).isEqualTo(BookingStatus.PROVISIONAL);
+        assertThat(second.getStartsAt()).isEqualTo(secondMatch.getStartsAt());
+        assertThat(second.getEndsAt()).isEqualTo(secondMatch.getEndsAt());
+    }
+
+    @Test
+    void onlyMatchAdminCanCreateProvisionalBooking() {
+        UserEntity owner = createUser();
+        UserEntity nonAdmin = createUser();
+        PitchEntity pitch = createPitch(owner);
+        MatchEntity match = createMatch(owner);
+        createSchedule(pitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
+        long bookingCountBefore = bookingRepository.count();
+
+        assertThatThrownBy(() -> bookingService.createProvisionalBooking(new CreateProvisionalBookingCommand(
+                nonAdmin.getId(),
+                match.getId(),
+                pitch.getId(),
+                new BigDecimal("120.00"),
+                "EUR"))).isInstanceOf(ContextualPermissionDeniedException.class);
+        assertThat(bookingRepository.count()).isEqualTo(bookingCountBefore);
     }
 
     @Test
     void rejectsProvisionalBookingOutsideAvailability() {
         UserEntity owner = createUser();
         PitchEntity pitch = createPitch(owner);
-        MatchEntity match = createMatch(owner);
+        MatchEntity outsideScheduleMatch = createMatch(owner, MONDAY_09_00.minusHours(1));
+        MatchEntity blockedMatch = createMatch(owner, MONDAY_09_00.plusHours(1));
         createSchedule(pitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
         pitchBlockService.createBlock(new CreatePitchBlockCommand(
                 pitch.getId(),
@@ -249,9 +272,9 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
                 "maintenance",
                 "Blocked"));
 
-        assertThatThrownBy(() -> createBooking(match, pitch, MONDAY_09_00.minusHours(1), MONDAY_09_00))
+        assertThatThrownBy(() -> createBooking(outsideScheduleMatch, pitch))
                 .isInstanceOf(PitchNotAvailableException.class);
-        assertThatThrownBy(() -> createBooking(match, pitch, MONDAY_09_00.plusHours(1), MONDAY_09_00.plusHours(2)))
+        assertThatThrownBy(() -> createBooking(blockedMatch, pitch))
                 .isInstanceOf(PitchNotAvailableException.class);
     }
 
@@ -260,20 +283,19 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
         UserEntity owner = createUser();
         PitchEntity pitch = createPitch(owner);
         MatchEntity confirmedMatch = createMatch(owner);
-        MatchEntity challengerMatch = createMatch(createUser());
+        MatchEntity overlappingChallengerMatch = createMatch(createUser(), MONDAY_09_00.plusMinutes(30));
+        MatchEntity adjacentChallengerMatch = createMatch(createUser(), MONDAY_09_00.plusHours(1));
         createSchedule(pitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
 
-        BookingEntity confirmed = createBooking(confirmedMatch, pitch, MONDAY_09_00, MONDAY_09_00.plusHours(1));
+        BookingEntity confirmed = createBooking(confirmedMatch, pitch);
         confirmed.setStatus(BookingStatus.CONFIRMED);
         confirmed.setConfirmedAt(OffsetDateTime.now(FIXED_CLOCK));
         bookingRepository.save(confirmed);
 
         assertThatThrownBy(() -> createBooking(
-                challengerMatch,
-                pitch,
-                MONDAY_09_00.plusMinutes(30),
-                MONDAY_09_00.plusMinutes(90))).isInstanceOf(PitchNotAvailableException.class);
-        assertThat(createBooking(challengerMatch, pitch, MONDAY_09_00.plusHours(1), MONDAY_09_00.plusHours(2)).getId())
+                overlappingChallengerMatch,
+                pitch)).isInstanceOf(PitchNotAvailableException.class);
+        assertThat(createBooking(adjacentChallengerMatch, pitch).getId())
                 .isNotNull();
     }
 
@@ -283,7 +305,7 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
         PitchEntity pitch = createPitch(owner);
         MatchEntity match = createMatch(owner);
         createSchedule(pitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
-        BookingEntity booking = createBooking(match, pitch, MONDAY_09_00, MONDAY_09_00.plusHours(1));
+        BookingEntity booking = createBooking(match, pitch);
 
         BookingEntity rejected = bookingService.rejectBooking(new RejectBookingCommand(
                 booking.getId(),
@@ -308,7 +330,7 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
         PitchEntity pitch = createPitch(owner);
         MatchEntity match = createMatch(owner);
         createSchedule(pitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
-        BookingEntity booking = createBooking(match, pitch, MONDAY_09_00, MONDAY_09_00.plusHours(1));
+        BookingEntity booking = createBooking(match, pitch);
 
         assertThatThrownBy(() -> bookingService.rejectBooking(new RejectBookingCommand(
                 booking.getId(),
@@ -334,7 +356,7 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
         PitchEntity pitch = createPitch(owner);
         MatchEntity match = createMatch(owner);
         createSchedule(pitch, owner, LocalTime.of(9, 0), LocalTime.of(12, 0));
-        BookingEntity booking = createBooking(match, pitch, MONDAY_09_00, MONDAY_09_00.plusHours(1));
+        BookingEntity booking = createBooking(match, pitch);
 
         assertThatThrownBy(() -> bookingService.rejectBooking(new RejectBookingCommand(
                 booking.getId(),
@@ -358,14 +380,11 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
 
     private BookingEntity createBooking(
             final MatchEntity match,
-            final PitchEntity pitch,
-            final OffsetDateTime startsAt,
-            final OffsetDateTime endsAt) {
+            final PitchEntity pitch) {
         return bookingService.createProvisionalBooking(new CreateProvisionalBookingCommand(
+                match.getCreatedByUser().getId(),
                 match.getId(),
                 pitch.getId(),
-                startsAt,
-                endsAt,
                 new BigDecimal("120.00"),
                 "EUR"));
     }
@@ -410,6 +429,10 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
     }
 
     private MatchEntity createMatch(final UserEntity creator) {
+        return createMatch(creator, MONDAY_09_00);
+    }
+
+    private MatchEntity createMatch(final UserEntity creator, final OffsetDateTime startsAt) {
         GroupEntity group = groupService.createGroup(new CreateGroupCommand(
                 uniqueName("Group"),
                 "Group description",
@@ -418,7 +441,7 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
         return matchService.createMatch(new CreateMatchCommand(
                 group.getId(),
                 creator.getId(),
-                MONDAY_09_00,
+                startsAt,
                 60,
                 10,
                 MatchJoinMode.OPEN_JOIN,
