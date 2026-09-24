@@ -25,12 +25,21 @@ python_cmd() {
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 MESSAGE_CHECKER="$REPO_ROOT/.githooks/message_structure.py"
+APPROVAL_CHECKER="$REPO_ROOT/.governance/approval.py"
 PYTHON=$(python_cmd)
 REFS=$(mktemp "${TMPDIR:-/tmp}/peladinhas-pre-push.XXXXXX")
 trap 'rm -f "$REFS"' EXIT HUP INT TERM
 cat >"$REFS"
 
 if grep -Eq 'refs/heads/main( |$)' "$REFS"; then
+    if [ -f "$APPROVAL_CHECKER" ] &&
+        PYTHONDONTWRITEBYTECODE=1 $PYTHON "$APPROVAL_CHECKER" check-main-bootstrap-refs "$REFS" "${1:-origin}"; then
+        PYTHONDONTWRITEBYTECODE=1 $PYTHON "$APPROVAL_CHECKER" consume-main-bootstrap
+        while read -r local_ref local_sha remote_ref remote_sha; do
+            PYTHONDONTWRITEBYTECODE=1 $PYTHON "$MESSAGE_CHECKER" bootstrap-tip "$local_sha"
+        done <"$REFS"
+        exit 0
+    fi
     echo "pre-push: direct pushes to main are forbidden" >&2
     exit 1
 fi

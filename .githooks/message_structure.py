@@ -159,6 +159,23 @@ def validate_push_commits(local_sha: str, remote_sha: str) -> list[str]:
     return problems
 
 
+def validate_tip_commit(local_sha: str) -> list[str]:
+    """Check only the current branch tip used for empty-remote bootstrap."""
+    zero = "0" * 40
+    if local_sha == zero:
+        return []
+    result = subprocess.run(
+        ["git", "show", "-s", "--format=%B", local_sha],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode:
+        return ["bootstrap tip commit message could not be inspected"]
+    return [f"commit {local_sha[:12]}: {problem}" for problem in validate_commit_message(result.stdout)]
+
+
 def main() -> int:
     """Expose branch and push checks to shell-based Git hooks."""
     command = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -169,6 +186,8 @@ def main() -> int:
         problems = validate_commit_message(raw)
     elif command == "push-commits" and len(sys.argv) == 4:
         problems = validate_push_commits(sys.argv[2], sys.argv[3])
+    elif command == "bootstrap-tip" and len(sys.argv) == 3:
+        problems = validate_tip_commit(sys.argv[2])
     else:
         print("message-structure: invalid command", file=sys.stderr)
         return 1
