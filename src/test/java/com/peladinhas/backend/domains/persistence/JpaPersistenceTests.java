@@ -34,6 +34,8 @@ import com.peladinhas.backend.domains.matches.persistence.MatchAdminEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchAdminId;
 import com.peladinhas.backend.domains.matches.persistence.MatchAdminRepository;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
+import com.peladinhas.backend.domains.matches.persistence.MatchFundingMode;
+import com.peladinhas.backend.domains.matches.persistence.MatchFundingState;
 import com.peladinhas.backend.domains.matches.persistence.MatchJoinMode;
 import com.peladinhas.backend.domains.matches.persistence.MatchParticipantEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchParticipantRepository;
@@ -269,6 +271,8 @@ class JpaPersistenceTests extends PostgreSqlContainerTest {
         match.setMaxPlayers(10);
         match.setJoinMode(MatchJoinMode.OPEN_JOIN);
         match.setStatus(MatchStatus.DRAFT);
+        match.setFundingMode(MatchFundingMode.SPLIT_PAYMENT);
+        match.setFundingState(MatchFundingState.COLLECTING);
         match.setPublicVacanciesEnabled(true);
         match.setCreatedAt(now);
         match.setUpdatedAt(now);

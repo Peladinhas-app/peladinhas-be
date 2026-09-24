@@ -13,5 +13,6 @@ public record CreateDirectMatchRequest(
         @NotNull @Positive Integer durationMinutes,
         @NotNull @Positive Integer maxPlayers,
         @NotBlank String joinMode,
-        @NotNull Boolean publicVacanciesEnabled) {
+        @NotNull Boolean publicVacanciesEnabled,
+        String fundingMode) {
 }

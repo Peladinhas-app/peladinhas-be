@@ -16,6 +16,8 @@ public record MatchResponse(
         Integer maxPlayers,
         String joinMode,
         String status,
+        String fundingMode,
+        String fundingState,
         Boolean publicVacanciesEnabled) {
 
     public static MatchResponse from(final MatchEntity match) {
@@ -29,6 +31,8 @@ public record MatchResponse(
                 match.getMaxPlayers(),
                 ApiEnumParser.value(match.getJoinMode()),
                 ApiEnumParser.value(match.getStatus()),
+                ApiEnumParser.value(match.getFundingMode()),
+                ApiEnumParser.value(match.getFundingState()),
                 match.getPublicVacanciesEnabled());
     }
 }

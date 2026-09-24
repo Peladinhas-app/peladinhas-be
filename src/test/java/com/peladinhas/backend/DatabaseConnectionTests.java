@@ -1,5 +1,4 @@
 package com.peladinhas.backend;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -29,6 +28,7 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
             "group_members",
             "groups",
             "match_admins",
+            "match_funding_contributions",
             "match_participants",
             "match_price_adjustments",
             "matches",
@@ -74,7 +74,7 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
                 """, Integer.class);
 
         assertThat(applicationTables).containsExactlyElementsOf(EXPECTED_APPLICATION_TABLES);
-        assertThat(successfulMigrations).isEqualTo(3);
+        assertThat(successfulMigrations).isEqualTo(4);
     }
 
     /**
@@ -176,9 +176,9 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
         assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into matches (
                     id, group_id, created_by_user_id, starts_at, ends_at, max_players,
-                    join_mode, status, public_vacancies_enabled, created_at, updated_at
+                    join_mode, status, funding_mode, funding_state, public_vacancies_enabled, created_at, updated_at
                 )
-                values (?, ?, ?, ?, ?, 10, 'open_join', 'draft', true, ?, ?)
+                values (?, ?, ?, ?, ?, 10, 'open_join', 'draft', 'split_payment', 'collecting', true, ?, ?)
                 """, UUID.randomUUID(), groupId, userId, now.plusHours(2), now.plusHours(1), now, now))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
@@ -231,9 +231,9 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
         assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into matches (
                     id, group_id, created_by_user_id, starts_at, ends_at, max_players,
-                    join_mode, status, public_vacancies_enabled, created_at, updated_at
+                    join_mode, status, funding_mode, funding_state, public_vacancies_enabled, created_at, updated_at
                 )
-                values (?, ?, ?, ?, ?, 10, 'open_join', 'invented_status', true, ?, ?)
+                values (?, ?, ?, ?, ?, 10, 'open_join', 'invented_status', 'split_payment', 'collecting', true, ?, ?)
                 """, UUID.randomUUID(), groupId, userId, now.plusHours(1), now.plusHours(2), now, now))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
@@ -610,9 +610,9 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
         jdbcTemplate.update("""
                 insert into matches (
                     id, group_id, created_by_user_id, starts_at, ends_at, max_players,
-                    join_mode, status, public_vacancies_enabled, created_at, updated_at
+                    join_mode, status, funding_mode, funding_state, public_vacancies_enabled, created_at, updated_at
                 )
-                values (?, ?, ?, ?, ?, 10, 'open_join', 'draft', true, ?, ?)
+                values (?, ?, ?, ?, ?, 10, 'open_join', 'draft', 'split_payment', 'collecting', true, ?, ?)
                 """, matchId, groupId, createdByUserId, now.plusDays(1), now.plusDays(1).plusHours(1), now, now);
     }
 

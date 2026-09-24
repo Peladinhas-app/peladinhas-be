@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import com.peladinhas.backend.auth.CurrentUserService;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
+import com.peladinhas.backend.domains.matches.persistence.MatchFundingMode;
 import com.peladinhas.backend.domains.matches.persistence.MatchJoinMode;
 import com.peladinhas.backend.domains.matches.persistence.MatchParticipantEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchStatus;
@@ -44,6 +45,7 @@ public class MatchController {
     public MatchResponse createMatch(@Valid @RequestBody final CreateMatchRequest request) {
         UUID currentUserId = currentUserService.requireCurrentUserId();
         MatchJoinMode joinMode = ApiEnumParser.parse(MatchJoinMode.class, request.joinMode(), "joinMode");
+        MatchFundingMode fundingMode = fundingModeOrDefault(request.fundingMode());
         MatchEntity match = matchService.createMatch(new CreateMatchCommand(
                 request.groupId(),
                 currentUserId,
@@ -51,7 +53,8 @@ public class MatchController {
                 request.durationMinutes(),
                 request.maxPlayers(),
                 joinMode,
-                request.publicVacanciesEnabled()));
+                request.publicVacanciesEnabled(),
+                fundingMode));
         return MatchResponse.from(match);
     }
 
@@ -60,6 +63,7 @@ public class MatchController {
     public MatchResponse createDirectMatch(@Valid @RequestBody final CreateDirectMatchRequest request) {
         UUID currentUserId = currentUserService.requireCurrentUserId();
         MatchJoinMode joinMode = ApiEnumParser.parse(MatchJoinMode.class, request.joinMode(), "joinMode");
+        MatchFundingMode fundingMode = fundingModeOrDefault(request.fundingMode());
         MatchEntity match = matchService.createDirectMatch(new CreateDirectMatchCommand(
                 currentUserId,
                 request.groupName(),
@@ -68,7 +72,8 @@ public class MatchController {
                 request.durationMinutes(),
                 request.maxPlayers(),
                 joinMode,
-                request.publicVacanciesEnabled()));
+                request.publicVacanciesEnabled(),
+                fundingMode));
         return MatchResponse.from(match);
     }
 
@@ -124,5 +129,12 @@ public class MatchController {
                 userId,
                 currentUserService.requireCurrentUserId());
         return ParticipantResponse.from(participant);
+    }
+
+    private MatchFundingMode fundingModeOrDefault(final String value) {
+        if (value == null || value.isBlank()) {
+            return MatchFundingMode.SPLIT_PAYMENT;
+        }
+        return ApiEnumParser.parse(MatchFundingMode.class, value, "fundingMode");
     }
 }

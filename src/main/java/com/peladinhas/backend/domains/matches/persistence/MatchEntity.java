@@ -42,6 +42,14 @@ public class MatchEntity extends AbstractUuidEntity {
     @Column(name = "status", nullable = false, columnDefinition = "varchar")
     private MatchStatus status;
 
+    @Convert(converter = MatchFundingMode.ConverterImpl.class)
+    @Column(name = "funding_mode", nullable = false, columnDefinition = "varchar")
+    private MatchFundingMode fundingMode;
+
+    @Convert(converter = MatchFundingState.ConverterImpl.class)
+    @Column(name = "funding_state", nullable = false, columnDefinition = "varchar")
+    private MatchFundingState fundingState;
+
     @Column(name = "public_vacancies_enabled", nullable = false)
     private Boolean publicVacanciesEnabled;
 
@@ -105,6 +113,22 @@ public class MatchEntity extends AbstractUuidEntity {
 
     public void setStatus(final MatchStatus status) {
         this.status = status;
+    }
+
+    public MatchFundingMode getFundingMode() {
+        return fundingMode;
+    }
+
+    public void setFundingMode(final MatchFundingMode fundingMode) {
+        this.fundingMode = fundingMode;
+    }
+
+    public MatchFundingState getFundingState() {
+        return fundingState;
+    }
+
+    public void setFundingState(final MatchFundingState fundingState) {
+        this.fundingState = fundingState;
     }
 
     public Boolean getPublicVacanciesEnabled() {

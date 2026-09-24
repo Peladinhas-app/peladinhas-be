@@ -14,6 +14,8 @@ import com.peladinhas.backend.domains.matches.persistence.MatchAdminEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchAdminId;
 import com.peladinhas.backend.domains.matches.persistence.MatchAdminRepository;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
+import com.peladinhas.backend.domains.matches.persistence.MatchFundingMode;
+import com.peladinhas.backend.domains.matches.persistence.MatchFundingState;
 import com.peladinhas.backend.domains.matches.persistence.MatchRepository;
 import com.peladinhas.backend.domains.matches.persistence.MatchStatus;
 import com.peladinhas.backend.domains.users.persistence.UserEntity;
@@ -57,7 +59,7 @@ public class MatchService {
 
     @Transactional
     public MatchEntity createMatch(final CreateMatchCommand command) {
-        validateCreateMatchCommand(command.durationMinutes(), command.maxPlayers());
+        validateCreateMatchCommand(command.durationMinutes(), command.maxPlayers(), command.fundingMode());
 
         GroupEntity group = groupRepository.findByIdForUpdate(command.groupId())
                 .orElseThrow(() -> new ResourceNotFoundException("Group was not found."));
@@ -85,7 +87,8 @@ public class MatchService {
                 command.durationMinutes(),
                 command.maxPlayers(),
                 command.joinMode(),
-                command.publicVacanciesEnabled()));
+                command.publicVacanciesEnabled(),
+                command.fundingMode()));
     }
 
     @Transactional
@@ -129,12 +132,18 @@ public class MatchService {
         }
     }
 
-    private void validateCreateMatchCommand(final int durationMinutes, final int maxPlayers) {
+    private void validateCreateMatchCommand(
+            final int durationMinutes,
+            final int maxPlayers,
+            final MatchFundingMode fundingMode) {
         if (!SUPPORTED_DURATIONS_MINUTES.contains(durationMinutes)) {
             throw new UnsupportedMatchDurationException("Match duration is not supported.");
         }
         if (maxPlayers <= 0) {
             throw new DomainException("Maximum players must be greater than zero.");
+        }
+        if (fundingMode == null) {
+            throw new DomainException("Match funding mode is required.");
         }
     }
 
@@ -167,6 +176,8 @@ public class MatchService {
         match.setMaxPlayers(command.maxPlayers());
         match.setJoinMode(command.joinMode());
         match.setStatus(MatchStatus.DRAFT);
+        match.setFundingMode(command.fundingMode());
+        match.setFundingState(MatchFundingState.COLLECTING);
         match.setPublicVacanciesEnabled(command.publicVacanciesEnabled());
         match.setCreatedAt(now);
         match.setUpdatedAt(now);

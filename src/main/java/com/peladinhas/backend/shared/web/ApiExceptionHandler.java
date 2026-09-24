@@ -7,6 +7,7 @@ import java.util.List;
 import com.peladinhas.backend.auth.AuthenticatedUserNotFoundException;
 import com.peladinhas.backend.auth.InvalidAuthenticatedEmailException;
 import com.peladinhas.backend.domains.bookings.service.InvalidBookingTransitionException;
+import com.peladinhas.backend.domains.funding.service.BookingFundingIncompleteException;
 import com.peladinhas.backend.domains.matches.service.ActiveUpcomingMatchExistsException;
 import com.peladinhas.backend.domains.matches.service.InvalidMatchTransitionException;
 import com.peladinhas.backend.domains.matches.service.InvalidParticipantTransitionException;
@@ -66,6 +67,7 @@ public class ApiExceptionHandler {
             InvalidMatchTransitionException.class,
             InvalidParticipantTransitionException.class,
             InvalidBookingTransitionException.class,
+            BookingFundingIncompleteException.class,
             MatchNotAcceptingParticipantsException.class
     })
     ResponseEntity<ApiErrorResponse> handleConflict(final DomainException exception) {
