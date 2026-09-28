@@ -323,9 +323,10 @@ API errors use a stable JSON shape:
 `fieldErrors` is an empty list for non-field-specific errors. Error responses
 must not expose stack traces or internal exception details.
 
-## Local CORS
+## Local CORS and Health
 
-The backend allows local development browser origins for `/api/v1/**` only:
+The backend allows configured browser origins for `/api/v1/**`. By default,
+local development allows:
 
 - `http://localhost:5173`
 - `http://127.0.0.1:5173`
@@ -336,6 +337,15 @@ For local Flutter Web development, start the frontend on the fixed allowed port:
 flutter run -d chrome --web-port 5173
 ```
 
-This explicit allowlist is temporary local-development configuration. It is not
-a production CORS policy, and production origins must be configured during a
-future deployment/security phase.
+Override allowed origins with `PELADINHAS_CORS_ALLOWED_ORIGINS` when needed.
+Production deployments must set this to the public frontend origin, such as the
+future Firebase Hosting URL.
+
+The public health-check endpoint is:
+
+```text
+GET http://localhost:8080/health
+```
+
+It is intended for runtime health probes and does not expose authenticated user
+or database data.

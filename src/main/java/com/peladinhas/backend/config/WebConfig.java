@@ -1,17 +1,25 @@
 package com.peladinhas.backend.config;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
+@EnableConfigurationProperties(PeladinhasCorsProperties.class)
 public class WebConfig implements WebMvcConfigurer {
+
+    private final PeladinhasCorsProperties corsProperties;
+
+    public WebConfig(final PeladinhasCorsProperties corsProperties) {
+        this.corsProperties = corsProperties;
+    }
 
     @Override
     public void addCorsMappings(final CorsRegistry registry) {
         registry.addMapping("/api/v1/**")
-                .allowedOrigins("http://localhost:5173", "http://127.0.0.1:5173")
-                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowedOrigins(corsProperties.allowedOriginsOrDefault().toArray(String[]::new))
+                .allowedMethods("GET", "POST", "PUT", "OPTIONS")
                 .allowedHeaders("*");
     }
 }
