@@ -1,0 +1,16 @@
+.git
+.codex
+.githooks
+.governance
+.governance/state
+.idea
+.settings
+docs
+target
+*.class
+*.log
+*.md
+.env
+.env.*
+docker-compose.yml
+render.yaml

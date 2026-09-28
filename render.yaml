@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: peladinhas-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: production
+      - key: PELADINHAS_DB_HOST
+        sync: false
+      - key: PELADINHAS_DB_PORT
+        sync: false
+      - key: PELADINHAS_DB_NAME
+        sync: false
+      - key: PELADINHAS_DB_USER
+        sync: false
+      - key: PELADINHAS_DB_PASSWORD
+        sync: false
+      - key: PELADINHAS_DB_SSL_MODE
+        value: require
+      - key: PELADINHAS_AUTH_PROVIDER
+        value: supabase
+      - key: PELADINHAS_AUTH_ISSUER_URI
+        sync: false
+      - key: PELADINHAS_AUTH_JWK_SET_URI
+        sync: false
+      - key: PELADINHAS_AUTH_AUDIENCE
+        value: authenticated
+      - key: PELADINHAS_CORS_ALLOWED_ORIGINS
+        sync: false
