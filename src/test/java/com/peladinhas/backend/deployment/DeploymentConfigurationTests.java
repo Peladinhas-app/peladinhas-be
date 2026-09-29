@@ -7,9 +7,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 
 import com.peladinhas.backend.config.PeladinhasCorsProperties;
 import com.peladinhas.backend.config.WebConfig;
@@ -30,6 +35,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import org.yaml.snakeyaml.Yaml;
 
 class DeploymentConfigurationTests {
 
@@ -87,6 +93,23 @@ class DeploymentConfigurationTests {
 
         assertThat(corsProperties.allowedOriginsOrDefault())
                 .containsExactly("https://peladinhas-test.web.app", "http://localhost:5173");
+    }
+
+    @Test
+    void renderBlueprintUsesOnlyFreeWebServicePlan() throws IOException {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> blueprint = new Yaml().load(Files.readString(Path.of("render.yaml")));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> services = (List<Map<String, Object>>) blueprint.get("services");
+
+        assertThat(blueprint).doesNotContainKeys("databases");
+        assertThat(services).singleElement().satisfies(service -> {
+            assertThat(service)
+                    .containsEntry("type", "web")
+                    .containsEntry("name", "peladinhas-backend")
+                    .containsEntry("plan", "free");
+            assertThat(service).doesNotContainKeys("disk", "disks");
+        });
     }
 
     @Configuration

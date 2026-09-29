@@ -18,6 +18,7 @@ Exact build/start configuration:
 | Setting | Value |
 |---|---|
 | Runtime | Docker |
+| Compute plan | `free` |
 | Dockerfile path | `./Dockerfile` |
 | Health check path | `/health` |
 | Start command | Docker image `ENTRYPOINT`, `java -jar /app/peladinhas-backend.jar` |
@@ -92,6 +93,7 @@ Flyway owns schema creation and future schema changes.
 1. Create or choose the Supabase project.
 2. Confirm the Supabase hosted PostgreSQL session pooler connection fields.
 3. Create a Render web service from this repository or apply `render.yaml`.
+   Confirm Blueprint review shows the `free` compute plan for `peladinhas-backend`.
 4. Set all required Render environment variables using real values in Render.
 5. Set `PELADINHAS_CORS_ALLOWED_ORIGINS` to the Firebase Hosting URL when it is known.
 6. Deploy the Render service.

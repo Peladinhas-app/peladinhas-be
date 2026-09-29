@@ -2,6 +2,7 @@ services:
   - type: web
     name: peladinhas-backend
     runtime: docker
+    plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
