@@ -19,6 +19,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -61,18 +62,27 @@ public class SecurityConfig {
             final PeladinhasAuthProperties properties,
             final PeladinhasJwtValidatorFactory jwtValidatorFactory) {
         if (properties.hasJwkSetUri()) {
-            NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri()).build();
+            NimbusJwtDecoder decoder = supabaseAccessTokenDecoder(
+                            NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri()))
+                    .build();
             decoder.setJwtValidator(jwtValidatorFactory.create(properties));
             return decoder;
         }
         if (properties.hasIssuerUri()) {
-            NimbusJwtDecoder decoder = NimbusJwtDecoder.withIssuerLocation(properties.issuerUri()).build();
+            NimbusJwtDecoder decoder = supabaseAccessTokenDecoder(
+                            NimbusJwtDecoder.withIssuerLocation(properties.issuerUri()))
+                    .build();
             decoder.setJwtValidator(jwtValidatorFactory.create(properties));
             return decoder;
         }
         return token -> {
             throw new BadJwtException("JWT verification is not configured.");
         };
+    }
+
+    private NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder supabaseAccessTokenDecoder(
+            final NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder builder) {
+        return builder.jwsAlgorithm(SignatureAlgorithm.ES256);
     }
 
     private void writeError(
