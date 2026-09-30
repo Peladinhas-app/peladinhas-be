@@ -1,5 +1,6 @@
 package com.peladinhas.backend.domains.pitches.persistence;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,6 +15,9 @@ public interface PitchRepository extends JpaRepository<PitchEntity, UUID> {
 
     @EntityGraph(attributePaths = "ownerUser")
     Optional<PitchEntity> findWithOwnerUserById(UUID id);
+
+    @EntityGraph(attributePaths = "ownerUser")
+    List<PitchEntity> findAllByOwnerUserIdOrderByCreatedAtDesc(UUID ownerUserId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from PitchEntity p where p.id = :id")

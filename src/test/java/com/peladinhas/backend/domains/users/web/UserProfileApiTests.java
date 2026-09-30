@@ -15,9 +15,17 @@ import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerInvitationCodeEntity;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerInvitationCodeRepository;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerProfileRepository;
+import com.peladinhas.backend.domains.owners.service.OwnerInvitationCodeHasher;
 import com.peladinhas.backend.domains.users.persistence.PreferredLanguage;
 import com.peladinhas.backend.domains.users.persistence.UserEntity;
 import com.peladinhas.backend.domains.users.persistence.UserRepository;
@@ -49,6 +57,15 @@ class UserProfileApiTests extends PostgreSqlContainerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private OwnerInvitationCodeHasher ownerInvitationCodeHasher;
+
+    @Autowired
+    private PitchOwnerInvitationCodeRepository pitchOwnerInvitationCodeRepository;
+
+    @Autowired
+    private PitchOwnerProfileRepository pitchOwnerProfileRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -87,6 +104,8 @@ class UserProfileApiTests extends PostgreSqlContainerTest {
                 .andExpect(jsonPath("$.email").value(email))
                 .andExpect(jsonPath("$.name").value("Onboarded User"))
                 .andExpect(jsonPath("$.preferredLanguage").value("pt"))
+                .andExpect(jsonPath("$.capabilities.player").value(true))
+                .andExpect(jsonPath("$.capabilities.pitchOwner").value(false))
                 .andExpect(jsonPath("$.authSubject").doesNotExist())
                 .andReturn();
 
@@ -98,6 +117,7 @@ class UserProfileApiTests extends PostgreSqlContainerTest {
         assertThat(persisted.getEmail()).isEqualTo(email);
         assertThat(persisted.getName()).isEqualTo("Onboarded User");
         assertThat(persisted.getPreferredLanguage()).isEqualTo(PreferredLanguage.PORTUGUESE);
+        assertThat(pitchOwnerProfileRepository.existsById(internalUserId)).isFalse();
     }
 
     @Test
@@ -117,6 +137,106 @@ class UserProfileApiTests extends PostgreSqlContainerTest {
                 .andExpect(jsonPath("$.code").value("invalid_request"));
 
         assertThat(userRepository.count()).isEqualTo(userCountBefore);
+    }
+
+    @Test
+    void playerOnboardingWithExplicitAccountTypeDoesNotRequireInvitation() throws Exception {
+        String email = uniqueEmail("player");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/profile")
+                        .with(jwtFor("player-subject-" + UUID.randomUUID(), email))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(profileRequest("Player User", "en", "PLAYER", null))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.capabilities.player").value(true))
+                .andExpect(jsonPath("$.capabilities.pitchOwner").value(false))
+                .andReturn();
+
+        assertThat(pitchOwnerProfileRepository.existsById(uuidAt(result, "id"))).isFalse();
+    }
+
+    @Test
+    void validOwnerInvitationCreatesPlayerAndPitchOwnerCapability() throws Exception {
+        String invitationCode = uniqueInvitationCode();
+        createInvitation(invitationCode, null);
+
+        MvcResult result = mockMvc.perform(post("/api/v1/profile")
+                        .with(jwtFor("owner-subject-" + UUID.randomUUID(), uniqueEmail("owner")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(profileRequest("Owner User", "pt", "PITCH_OWNER", invitationCode))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.capabilities.player").value(true))
+                .andExpect(jsonPath("$.capabilities.pitchOwner").value(true))
+                .andReturn();
+
+        UUID userId = uuidAt(result, "id");
+        assertThat(pitchOwnerProfileRepository.existsById(userId)).isTrue();
+        String invitationHash = ownerInvitationCodeHasher.hash(invitationCode);
+        assertThat(pitchOwnerInvitationCodeRepository.findAll().stream()
+                .filter(invitation -> invitation.getCodeHash().equals(invitationHash))
+                .toList()).singleElement()
+                .satisfies(invitation -> {
+                    assertThat(invitation.getUsedAt()).isEqualTo(OffsetDateTime.now(FIXED_CLOCK));
+                    assertThat(invitation.getUsedByUser().getId()).isEqualTo(userId);
+                });
+    }
+
+    @Test
+    void invalidExpiredAndUsedOwnerInvitationsAreRejectedWithoutCreatingProfile() throws Exception {
+        String expiredCode = uniqueInvitationCode();
+        String usedCode = uniqueInvitationCode();
+        createInvitation(expiredCode, OffsetDateTime.now(FIXED_CLOCK).minusMinutes(1));
+        createUsedInvitation(usedCode);
+        long userCountBefore = userRepository.count();
+
+        expectOwnerOnboardingRejected("missing-code", null, "invalid_request");
+        expectOwnerOnboardingRejected("invalid-code", uniqueInvitationCode(), "invalid_request");
+        expectOwnerOnboardingRejected("expired-code", expiredCode, "invalid_request");
+        expectOwnerOnboardingRejected("used-code", usedCode, "owner_invitation_code_used");
+
+        assertThat(userRepository.count()).isEqualTo(userCountBefore);
+    }
+
+    @Test
+    void concurrentOwnerInvitationRedemptionAllowsExactlyOneSuccess() throws Exception {
+        String invitationCode = uniqueInvitationCode();
+        createInvitation(invitationCode, null);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        var executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<Integer> first = executor.submit(() -> createOwnerProfileStatus("concurrent-a", invitationCode, ready, start));
+            Future<Integer> second = executor.submit(() -> createOwnerProfileStatus("concurrent-b", invitationCode, ready, start));
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(201, 409);
+            assertThat(pitchOwnerProfileRepository.findAll()).hasSize(1);
+            assertThat(pitchOwnerInvitationCodeRepository.findAll()).singleElement()
+                    .satisfies(invitation -> assertThat(invitation.getUsedAt()).isNotNull());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void existingPlayerActivatesPitchOwnerCapabilityFromProfileSettings() throws Exception {
+        UserEntity user = createUser("settings-subject-" + UUID.randomUUID(), uniqueEmail("settings"));
+        String invitationCode = uniqueInvitationCode();
+        createInvitation(invitationCode, null);
+
+        mockMvc.perform(post("/api/v1/profile/pitch-owner")
+                        .with(jwtFor(user.getAuthSubject(), user.getEmail()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("invitationCode", invitationCode))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(user.getId().toString()))
+                .andExpect(jsonPath("$.capabilities.player").value(true))
+                .andExpect(jsonPath("$.capabilities.pitchOwner").value(true));
+
+        assertThat(pitchOwnerProfileRepository.existsById(user.getId())).isTrue();
     }
 
     @Test
@@ -197,7 +317,9 @@ class UserProfileApiTests extends PostgreSqlContainerTest {
                 .andExpect(jsonPath("$.id").value(user.getId().toString()))
                 .andExpect(jsonPath("$.email").value(user.getEmail()))
                 .andExpect(jsonPath("$.name").value(user.getName()))
-                .andExpect(jsonPath("$.preferredLanguage").value("en"));
+                .andExpect(jsonPath("$.preferredLanguage").value("en"))
+                .andExpect(jsonPath("$.capabilities.player").value(true))
+                .andExpect(jsonPath("$.capabilities.pitchOwner").value(false));
     }
 
     @Test
@@ -223,6 +345,53 @@ class UserProfileApiTests extends PostgreSqlContainerTest {
                 .andExpect(jsonPath("$.code").value("unauthenticated"));
     }
 
+    private void expectOwnerOnboardingRejected(
+            final String subjectPrefix,
+            final String invitationCode,
+            final String expectedCode) throws Exception {
+        mockMvc.perform(post("/api/v1/profile")
+                        .with(jwtFor(subjectPrefix + "-" + UUID.randomUUID(), uniqueEmail(subjectPrefix)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(profileRequest("Rejected Owner", "en", "PITCH_OWNER", invitationCode))))
+                .andExpect(status().is(expectedCode.equals("owner_invitation_code_used") ? 409 : 400))
+                .andExpect(jsonPath("$.code").value(expectedCode));
+    }
+
+    private int createOwnerProfileStatus(
+            final String subjectPrefix,
+            final String invitationCode,
+            final CountDownLatch ready,
+            final CountDownLatch start) throws Exception {
+        ready.countDown();
+        start.await(5, TimeUnit.SECONDS);
+        return mockMvc.perform(post("/api/v1/profile")
+                        .with(jwtFor(subjectPrefix + "-" + UUID.randomUUID(), uniqueEmail(subjectPrefix)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(profileRequest("Concurrent Owner", "en", "PITCH_OWNER", invitationCode))))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private PitchOwnerInvitationCodeEntity createInvitation(
+            final String invitationCode,
+            final OffsetDateTime expiresAt) {
+        PitchOwnerInvitationCodeEntity invitation = new PitchOwnerInvitationCodeEntity();
+        invitation.setId(UUID.randomUUID());
+        invitation.setCodeHash(ownerInvitationCodeHasher.hash(invitationCode));
+        invitation.setExpiresAt(expiresAt);
+        invitation.setCreatedAt(OffsetDateTime.now(FIXED_CLOCK));
+        return pitchOwnerInvitationCodeRepository.save(invitation);
+    }
+
+    private PitchOwnerInvitationCodeEntity createUsedInvitation(final String invitationCode) {
+        UserEntity user = createUser("used-invitation-" + UUID.randomUUID(), uniqueEmail("used-invitation"));
+        PitchOwnerInvitationCodeEntity invitation = createInvitation(invitationCode, null);
+        invitation.setUsedAt(OffsetDateTime.now(FIXED_CLOCK));
+        invitation.setUsedByUser(user);
+        return pitchOwnerInvitationCodeRepository.save(invitation);
+    }
+
     private UserEntity createUser(final String authSubject, final String email) {
         OffsetDateTime now = OffsetDateTime.now(FIXED_CLOCK);
         UserEntity user = new UserEntity();
@@ -244,6 +413,19 @@ class UserProfileApiTests extends PostgreSqlContainerTest {
         return request;
     }
 
+    private Map<String, Object> profileRequest(
+            final String name,
+            final String preferredLanguage,
+            final String accountType,
+            final String ownerInvitationCode) {
+        Map<String, Object> request = profileRequest(name, preferredLanguage);
+        request.put("accountType", accountType);
+        if (ownerInvitationCode != null) {
+            request.put("ownerInvitationCode", ownerInvitationCode);
+        }
+        return request;
+    }
+
     private RequestPostProcessor jwtFor(final String subject, final String email) {
         return jwt().jwt(token -> token.subject(subject).claim("email", email));
     }
@@ -255,6 +437,10 @@ class UserProfileApiTests extends PostgreSqlContainerTest {
     private UUID uuidAt(final MvcResult result, final String field) throws Exception {
         JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
         return UUID.fromString(root.get(field).asText());
+    }
+
+    private String uniqueInvitationCode() {
+        return "owner-code-" + UUID.randomUUID() + "-" + UUID.randomUUID();
     }
 
     private String uniqueEmail(final String prefix) {

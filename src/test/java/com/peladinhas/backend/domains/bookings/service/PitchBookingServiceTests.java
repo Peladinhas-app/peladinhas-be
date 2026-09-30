@@ -25,6 +25,9 @@ import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchJoinMode;
 import com.peladinhas.backend.domains.matches.service.CreateMatchCommand;
 import com.peladinhas.backend.domains.matches.service.MatchService;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerProfileEntity;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerProfileRepository;
+import com.peladinhas.backend.domains.owners.service.PitchOwnerCapabilityRequiredException;
 import com.peladinhas.backend.domains.pitches.persistence.PitchEntity;
 import com.peladinhas.backend.domains.pitches.persistence.PitchScheduleEntity;
 import com.peladinhas.backend.domains.pitches.service.CreatePitchBlockCommand;
@@ -79,6 +82,9 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
     private PitchAvailabilityService pitchAvailabilityService;
 
     @Autowired
+    private PitchOwnerProfileRepository pitchOwnerProfileRepository;
+
+    @Autowired
     private PitchBlockService pitchBlockService;
 
     @Autowired
@@ -130,6 +136,23 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
                 true))).isInstanceOf(ContextualPermissionDeniedException.class);
     }
 
+
+    @Test
+    void normalPlayerCannotCreatePitchWithoutOwnerCapability() {
+        UserEntity player = createUser();
+
+        assertThatThrownBy(() -> pitchService.createPitch(new CreatePitchCommand(
+                player.getId(),
+                uniqueName("Pitch"),
+                "Pitch description",
+                "Lisbon",
+                new BigDecimal("38.7200"),
+                new BigDecimal("-9.1300"),
+                "Europe/Lisbon",
+                new BigDecimal("60.00"),
+                "EUR",
+                true))).isInstanceOf(PitchOwnerCapabilityRequiredException.class);
+    }
     @Test
     void createsValidRecurringScheduleRejectsOverlapAndAllowsAdjacentWindow() {
         UserEntity owner = createUser();
@@ -415,6 +438,7 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
             final boolean active,
             final BigDecimal latitude,
             final BigDecimal longitude) {
+        activateOwner(owner);
         return pitchService.createPitch(new CreatePitchCommand(
                 owner.getId(),
                 uniqueName("Pitch"),
@@ -460,6 +484,18 @@ class PitchBookingServiceTests extends PostgreSqlContainerTest {
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         return userRepository.save(user);
+    }
+
+    private void activateOwner(final UserEntity user) {
+        if (pitchOwnerProfileRepository.existsById(user.getId())) {
+            return;
+        }
+        OffsetDateTime now = OffsetDateTime.now(FIXED_CLOCK);
+        PitchOwnerProfileEntity profile = new PitchOwnerProfileEntity();
+        profile.setUser(user);
+        profile.setActivatedAt(now);
+        profile.setCreatedAt(now);
+        pitchOwnerProfileRepository.save(profile);
     }
 
     private String uniqueName(final String prefix) {

@@ -43,6 +43,8 @@ import com.peladinhas.backend.domains.matches.persistence.MatchParticipantStatus
 import com.peladinhas.backend.domains.matches.service.CreateDirectMatchCommand;
 import com.peladinhas.backend.domains.matches.service.CreateMatchCommand;
 import com.peladinhas.backend.domains.matches.service.MatchService;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerProfileEntity;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerProfileRepository;
 import com.peladinhas.backend.domains.pitches.persistence.PitchEntity;
 import com.peladinhas.backend.domains.pitches.service.CreatePitchBlockCommand;
 import com.peladinhas.backend.domains.pitches.service.CreatePitchCommand;
@@ -108,6 +110,9 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
     private PitchBlockService pitchBlockService;
 
     @Autowired
+    private PitchOwnerProfileRepository pitchOwnerProfileRepository;
+
+    @Autowired
     private PitchScheduleService pitchScheduleService;
 
     @Autowired
@@ -139,6 +144,7 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
     @Test
     void authenticatedUserCreatesPitchAsThemselvesAndObsoleteOwnerCannotImpersonate() throws Exception {
         UserEntity owner = createUser();
+        activateOwner(owner);
         UserEntity spoofedOwner = createUser();
 
         MvcResult created = mockMvc.perform(post("/api/v1/pitches")
@@ -160,6 +166,18 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
                         .content(json(impersonationBody)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("invalid_request"));
+    }
+
+    @Test
+    void normalPlayerCannotCreatePitchByCallingApiDirectly() throws Exception {
+        UserEntity player = createUser();
+
+        mockMvc.perform(post("/api/v1/pitches")
+                        .with(jwtFor(player))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(pitchRequest(true))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("pitch_owner_capability_required"));
     }
 
     @Test
@@ -206,6 +224,34 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
     }
 
     @Test
+    void ownerQueriesReturnOnlyAuthenticatedOwnersPitchesAndBookings() throws Exception {
+        UserEntity firstOwner = createUser();
+        UserEntity secondOwner = createUser();
+        PitchEntity firstPitch = createPitch(firstOwner, true);
+        PitchEntity secondPitch = createPitch(secondOwner, true);
+        MatchEntity firstMatch = createMatch(firstOwner);
+        MatchEntity secondMatch = createMatch(secondOwner, MONDAY_09_00.plusHours(1));
+        createSchedule(firstPitch, firstOwner, LocalTime.of(9, 0), LocalTime.of(12, 0));
+        createSchedule(secondPitch, secondOwner, LocalTime.of(9, 0), LocalTime.of(12, 0));
+        BookingEntity firstBooking = createBooking(firstMatch, firstPitch);
+        BookingEntity secondBooking = createBooking(secondMatch, secondPitch);
+
+        mockMvc.perform(get("/api/v1/pitches/mine").with(jwtFor(firstOwner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(firstPitch.getId().toString()))
+                .andExpect(jsonPath("$[0].ownerUserId").value(firstOwner.getId().toString()))
+                .andExpect(jsonPath("$[1]").doesNotExist());
+
+        mockMvc.perform(get("/api/v1/bookings/owner").with(jwtFor(firstOwner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(firstBooking.getId().toString()))
+                .andExpect(jsonPath("$[0].pitchId").value(firstPitch.getId().toString()))
+                .andExpect(jsonPath("$[1]").doesNotExist());
+
+        assertThat(secondBooking.getPitch().getId()).isEqualTo(secondPitch.getId());
+    }
+
+    @Test
     void availabilityMissingOrMalformedQueryParametersReturnStableBadRequest() throws Exception {
         UserEntity owner = createUser();
         UUID pitchId = uuidAt(createPitchThroughApi(owner, true), "id");
@@ -248,6 +294,7 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
     @Test
     void pitchCoordinateBoundariesAreAcceptedAndOutOfRangeCoordinatesReturnStableBadRequest() throws Exception {
         UserEntity owner = createUser();
+        activateOwner(owner);
 
         mockMvc.perform(post("/api/v1/pitches")
                         .with(jwtFor(owner))
@@ -668,6 +715,7 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
                 .andExpect(jsonPath("$.fieldErrors").isArray());
     }
     private MvcResult createPitchThroughApi(final UserEntity owner, final boolean active) throws Exception {
+        activateOwner(owner);
         return mockMvc.perform(post("/api/v1/pitches")
                         .with(jwtFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -781,6 +829,7 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
     }
 
     private PitchEntity createPitch(final UserEntity owner, final boolean active) {
+        activateOwner(owner);
         return pitchService.createPitch(new CreatePitchCommand(
                 owner.getId(),
                 uniqueName("Pitch"),
@@ -826,6 +875,18 @@ class PitchBookingApiTests extends PostgreSqlContainerTest {
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         return userRepository.save(user);
+    }
+
+    private void activateOwner(final UserEntity user) {
+        if (pitchOwnerProfileRepository.existsById(user.getId())) {
+            return;
+        }
+        OffsetDateTime now = OffsetDateTime.now(FIXED_CLOCK);
+        PitchOwnerProfileEntity profile = new PitchOwnerProfileEntity();
+        profile.setUser(user);
+        profile.setActivatedAt(now);
+        profile.setCreatedAt(now);
+        pitchOwnerProfileRepository.save(profile);
     }
 
     private RequestPostProcessor jwtFor(final UserEntity user) {

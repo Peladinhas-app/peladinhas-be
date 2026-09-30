@@ -3,14 +3,16 @@ package com.peladinhas.backend.domains.bookings.service;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import com.peladinhas.backend.domains.bookings.persistence.BookingEntity;
 import com.peladinhas.backend.domains.bookings.persistence.BookingRejectionEntity;
 import com.peladinhas.backend.domains.bookings.persistence.BookingRejectionRepository;
-import com.peladinhas.backend.domains.bookings.persistence.BookingStatus;
 import com.peladinhas.backend.domains.bookings.persistence.BookingRepository;
+import com.peladinhas.backend.domains.bookings.persistence.BookingStatus;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
+import com.peladinhas.backend.domains.owners.service.PitchOwnerCapabilityService;
 import com.peladinhas.backend.domains.matches.persistence.MatchRepository;
 import com.peladinhas.backend.domains.matches.service.MatchService;
 import com.peladinhas.backend.domains.pitches.persistence.PitchEntity;
@@ -29,6 +31,7 @@ public class BookingService {
     private final Clock clock;
     private final MatchService matchService;
     private final MatchRepository matchRepository;
+    private final PitchOwnerCapabilityService pitchOwnerCapabilityService;
     private final PitchAvailabilityService pitchAvailabilityService;
     private final PitchService pitchService;
 
@@ -38,6 +41,7 @@ public class BookingService {
             final Clock clock,
             final MatchService matchService,
             final MatchRepository matchRepository,
+            final PitchOwnerCapabilityService pitchOwnerCapabilityService,
             final PitchAvailabilityService pitchAvailabilityService,
             final PitchService pitchService) {
         this.bookingRejectionRepository = bookingRejectionRepository;
@@ -45,6 +49,7 @@ public class BookingService {
         this.clock = clock;
         this.matchService = matchService;
         this.matchRepository = matchRepository;
+        this.pitchOwnerCapabilityService = pitchOwnerCapabilityService;
         this.pitchAvailabilityService = pitchAvailabilityService;
         this.pitchService = pitchService;
     }
@@ -73,6 +78,12 @@ public class BookingService {
         booking.setCreatedAt(now);
         booking.setUpdatedAt(now);
         return bookingRepository.save(booking);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BookingEntity> findBookingsForPitchOwner(final UUID ownerUserId) {
+        pitchOwnerCapabilityService.requirePitchOwnerCapability(ownerUserId);
+        return bookingRepository.findAllByPitchOwnerUserIdOrderByCreatedAtDesc(ownerUserId);
     }
 
     @Transactional

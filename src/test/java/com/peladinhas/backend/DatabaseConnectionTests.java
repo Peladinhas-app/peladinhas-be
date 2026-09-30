@@ -37,6 +37,8 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
             "payments",
             "pitch_blocks",
             "pitch_images",
+            "pitch_owner_invitation_codes",
+            "pitch_owner_profiles",
             "pitch_schedules",
             "pitches",
             "refunds",
@@ -74,7 +76,7 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
                 """, Integer.class);
 
         assertThat(applicationTables).containsExactlyElementsOf(EXPECTED_APPLICATION_TABLES);
-        assertThat(successfulMigrations).isEqualTo(4);
+        assertThat(successfulMigrations).isEqualTo(5);
     }
 
     /**

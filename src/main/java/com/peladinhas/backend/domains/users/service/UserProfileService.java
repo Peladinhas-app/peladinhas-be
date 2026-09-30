@@ -6,6 +6,8 @@ import java.util.UUID;
 
 import com.peladinhas.backend.auth.AuthenticatedUserPrincipal;
 import com.peladinhas.backend.auth.CurrentUserService;
+import com.peladinhas.backend.domains.owners.service.OwnerInvitationRequiredException;
+import com.peladinhas.backend.domains.owners.service.PitchOwnerCapabilityService;
 import com.peladinhas.backend.domains.users.persistence.UserEntity;
 import com.peladinhas.backend.domains.users.persistence.UserRepository;
 import com.peladinhas.backend.shared.domain.DomainException;
@@ -18,14 +20,17 @@ public class UserProfileService {
 
     private final Clock clock;
     private final CurrentUserService currentUserService;
+    private final PitchOwnerCapabilityService pitchOwnerCapabilityService;
     private final UserRepository userRepository;
 
     public UserProfileService(
             final Clock clock,
             final CurrentUserService currentUserService,
+            final PitchOwnerCapabilityService pitchOwnerCapabilityService,
             final UserRepository userRepository) {
         this.clock = clock;
         this.currentUserService = currentUserService;
+        this.pitchOwnerCapabilityService = pitchOwnerCapabilityService;
         this.userRepository = userRepository;
     }
 
@@ -50,7 +55,11 @@ public class UserProfileService {
         user.setUpdatedAt(now);
 
         try {
-            return userRepository.saveAndFlush(user);
+            UserEntity savedUser = userRepository.saveAndFlush(user);
+            if (command.accountType() == RequestedAccountType.PITCH_OWNER) {
+                pitchOwnerCapabilityService.activateOwnerCapability(savedUser, command.ownerInvitationCode());
+            }
+            return savedUser;
         } catch (DataIntegrityViolationException exception) {
             throw new UserProfileConflictException("A Peladinhas profile already exists for this authenticated user.");
         }
@@ -59,6 +68,11 @@ public class UserProfileService {
     @Transactional(readOnly = true)
     public UserEntity currentProfile() {
         return currentUserService.requireCurrentUser();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasPitchOwnerCapability(final UUID userId) {
+        return pitchOwnerCapabilityService.hasPitchOwnerCapability(userId);
     }
 
     private void validate(final CreateUserProfileCommand command) {
@@ -70,6 +84,14 @@ public class UserProfileService {
         }
         if (command.preferredLanguage() == null) {
             throw new DomainException("Preferred language is required.");
+        }
+        if (command.accountType() == RequestedAccountType.PITCH_OWNER
+                && (command.ownerInvitationCode() == null || command.ownerInvitationCode().isBlank())) {
+            throw new OwnerInvitationRequiredException();
+        }
+        if (command.accountType() == RequestedAccountType.PLAYER
+                && command.ownerInvitationCode() != null && !command.ownerInvitationCode().isBlank()) {
+            throw new DomainException("Owner invitation code is only accepted for pitch owner onboarding.");
         }
     }
 }

@@ -14,6 +14,11 @@ import com.peladinhas.backend.domains.matches.service.InvalidParticipantTransiti
 import com.peladinhas.backend.domains.matches.service.MatchCapacityReachedException;
 import com.peladinhas.backend.domains.matches.service.MatchNotAcceptingParticipantsException;
 import com.peladinhas.backend.domains.matches.service.UnsupportedMatchDurationException;
+import com.peladinhas.backend.domains.owners.service.ExpiredOwnerInvitationCodeException;
+import com.peladinhas.backend.domains.owners.service.InvalidOwnerInvitationCodeException;
+import com.peladinhas.backend.domains.owners.service.OwnerInvitationRequiredException;
+import com.peladinhas.backend.domains.owners.service.PitchOwnerCapabilityRequiredException;
+import com.peladinhas.backend.domains.owners.service.UsedOwnerInvitationCodeException;
 import com.peladinhas.backend.domains.pitches.service.InvalidPitchIntervalException;
 import com.peladinhas.backend.domains.pitches.service.PitchNotAvailableException;
 import com.peladinhas.backend.domains.pitches.service.PitchScheduleConflictException;
@@ -61,6 +66,17 @@ public class ApiExceptionHandler {
         return error(HttpStatus.CONFLICT, "profile_conflict", exception.getMessage(), List.of());
     }
 
+    @ExceptionHandler(PitchOwnerCapabilityRequiredException.class)
+    ResponseEntity<ApiErrorResponse> handlePitchOwnerCapabilityRequired(
+            final PitchOwnerCapabilityRequiredException exception) {
+        return error(HttpStatus.FORBIDDEN, "pitch_owner_capability_required", exception.getMessage(), List.of());
+    }
+
+    @ExceptionHandler(UsedOwnerInvitationCodeException.class)
+    ResponseEntity<ApiErrorResponse> handleUsedOwnerInvitationCode(final UsedOwnerInvitationCodeException exception) {
+        return error(HttpStatus.CONFLICT, "owner_invitation_code_used", exception.getMessage(), List.of());
+    }
+
     @ExceptionHandler({
             ActiveUpcomingMatchExistsException.class,
             MatchCapacityReachedException.class,
@@ -86,7 +102,10 @@ public class ApiExceptionHandler {
             UnsupportedMatchDurationException.class,
             InvalidPitchIntervalException.class,
             InvalidAuthenticatedEmailException.class,
-            InvalidApiRequestException.class
+            InvalidApiRequestException.class,
+            OwnerInvitationRequiredException.class,
+            InvalidOwnerInvitationCodeException.class,
+            ExpiredOwnerInvitationCodeException.class
     })
     ResponseEntity<ApiErrorResponse> handleBadRequest(final DomainException exception) {
         return error(HttpStatus.BAD_REQUEST, "invalid_request", exception.getMessage(), List.of());
