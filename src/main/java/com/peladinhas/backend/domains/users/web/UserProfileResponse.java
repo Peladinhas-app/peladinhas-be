@@ -9,13 +9,15 @@ public record UserProfileResponse(
         UUID id,
         String email,
         String name,
-        String preferredLanguage) {
+        String preferredLanguage,
+        UserCapabilitiesResponse capabilities) {
 
-    public static UserProfileResponse from(final UserEntity user) {
+    public static UserProfileResponse from(final UserEntity user, final boolean pitchOwner) {
         return new UserProfileResponse(
                 user.getId(),
                 user.getEmail(),
                 user.getName(),
-                ApiEnumParser.value(user.getPreferredLanguage()));
+                ApiEnumParser.value(user.getPreferredLanguage()),
+                new UserCapabilitiesResponse(true, pitchOwner));
     }
 }

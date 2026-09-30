@@ -46,6 +46,10 @@ import com.peladinhas.backend.domains.matches.persistence.MatchRepository;
 import com.peladinhas.backend.domains.matches.persistence.MatchStatus;
 import com.peladinhas.backend.domains.notifications.persistence.NotificationEntity;
 import com.peladinhas.backend.domains.notifications.persistence.NotificationRepository;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerInvitationCodeEntity;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerInvitationCodeRepository;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerProfileEntity;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerProfileRepository;
 import com.peladinhas.backend.domains.payments.persistence.PaymentEntity;
 import com.peladinhas.backend.domains.payments.persistence.PaymentRepository;
 import com.peladinhas.backend.domains.payments.persistence.PaymentStatus;
@@ -89,6 +93,12 @@ class JpaPersistenceTests extends PostgreSqlContainerTest {
 
     @Autowired
     private GroupMemberRepository groupMemberRepository;
+
+    @Autowired
+    private PitchOwnerInvitationCodeRepository pitchOwnerInvitationCodeRepository;
+
+    @Autowired
+    private PitchOwnerProfileRepository pitchOwnerProfileRepository;
 
     @Autowired
     private PitchRepository pitchRepository;
@@ -145,6 +155,8 @@ class JpaPersistenceTests extends PostgreSqlContainerTest {
     void persistsAndLoadsRepresentativeEntityGraph() {
         OffsetDateTime now = OffsetDateTime.now();
         UserEntity user = saveUser(now);
+        savePitchOwnerProfile(user, now);
+        savePitchOwnerInvitation(user, now);
         GroupEntity group = saveGroup(user, now);
         saveGroupMember(group, user, now);
         PitchEntity pitch = savePitch(user, now);
@@ -167,6 +179,8 @@ class JpaPersistenceTests extends PostgreSqlContainerTest {
 
         assertThat(userRepository.findById(user.getId())).isPresent();
         assertThat(groupRepository.findById(group.getId())).isPresent();
+        assertThat(pitchOwnerProfileRepository.findById(user.getId())).isPresent();
+        assertThat(pitchOwnerInvitationCodeRepository.findAll()).hasSize(1);
         assertThat(pitchRepository.findById(pitch.getId())).isPresent();
         assertThat(matchRepository.findById(match.getId())).isPresent();
         assertThat(matchParticipantRepository.findById(participant.getId())).isPresent();
@@ -192,6 +206,24 @@ class JpaPersistenceTests extends PostgreSqlContainerTest {
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         return userRepository.save(user);
+    }
+
+    private void savePitchOwnerProfile(final UserEntity user, final OffsetDateTime now) {
+        PitchOwnerProfileEntity profile = new PitchOwnerProfileEntity();
+        profile.setUser(user);
+        profile.setActivatedAt(now);
+        profile.setCreatedAt(now);
+        pitchOwnerProfileRepository.save(profile);
+    }
+
+    private void savePitchOwnerInvitation(final UserEntity user, final OffsetDateTime now) {
+        PitchOwnerInvitationCodeEntity invitation = new PitchOwnerInvitationCodeEntity();
+        invitation.setId(UUID.randomUUID());
+        invitation.setCodeHash("hash-" + invitation.getId());
+        invitation.setUsedAt(now);
+        invitation.setUsedByUser(user);
+        invitation.setCreatedAt(now);
+        pitchOwnerInvitationCodeRepository.save(invitation);
     }
 
     private GroupEntity saveGroup(final UserEntity user, final OffsetDateTime now) {

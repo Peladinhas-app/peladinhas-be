@@ -4,8 +4,10 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 
+import com.peladinhas.backend.domains.owners.service.PitchOwnerCapabilityService;
 import com.peladinhas.backend.domains.pitches.persistence.PitchEntity;
 import com.peladinhas.backend.domains.pitches.persistence.PitchRepository;
 import com.peladinhas.backend.domains.users.persistence.UserEntity;
@@ -25,14 +27,17 @@ public class PitchService {
     private static final BigDecimal MAX_LONGITUDE = new BigDecimal("180");
 
     private final Clock clock;
+    private final PitchOwnerCapabilityService pitchOwnerCapabilityService;
     private final PitchRepository pitchRepository;
     private final UserRepository userRepository;
 
     public PitchService(
             final Clock clock,
+            final PitchOwnerCapabilityService pitchOwnerCapabilityService,
             final PitchRepository pitchRepository,
             final UserRepository userRepository) {
         this.clock = clock;
+        this.pitchOwnerCapabilityService = pitchOwnerCapabilityService;
         this.pitchRepository = pitchRepository;
         this.userRepository = userRepository;
     }
@@ -40,6 +45,7 @@ public class PitchService {
     @Transactional
     public PitchEntity createPitch(final CreatePitchCommand command) {
         UserEntity owner = requireUser(command.ownerUserId());
+        pitchOwnerCapabilityService.requirePitchOwnerCapability(owner.getId());
         validatePitchFields(command.latitude(), command.longitude(), command.timezone());
         OffsetDateTime now = OffsetDateTime.now(clock);
 
@@ -78,6 +84,12 @@ public class PitchService {
         pitch.setActive(command.active());
         pitch.setUpdatedAt(OffsetDateTime.now(clock));
         return pitchRepository.save(pitch);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PitchEntity> findPitchesOwnedBy(final UUID ownerUserId) {
+        pitchOwnerCapabilityService.requirePitchOwnerCapability(ownerUserId);
+        return pitchRepository.findAllByOwnerUserIdOrderByCreatedAtDesc(ownerUserId);
     }
 
     @Transactional(readOnly = true)

@@ -1,5 +1,6 @@
 package com.peladinhas.backend.domains.bookings.web;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.peladinhas.backend.auth.CurrentUserService;
@@ -11,6 +12,7 @@ import com.peladinhas.backend.domains.bookings.service.RejectBookingCommand;
 import com.peladinhas.backend.shared.web.ApiEnumParser;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,6 +32,13 @@ public class BookingController {
             final CurrentUserService currentUserService) {
         this.bookingService = bookingService;
         this.currentUserService = currentUserService;
+    }
+
+    @GetMapping("/owner")
+    public List<BookingResponse> ownerBookings() {
+        return bookingService.findBookingsForPitchOwner(currentUserService.requireCurrentUserId()).stream()
+                .map(BookingResponse::from)
+                .toList();
     }
 
     @PostMapping

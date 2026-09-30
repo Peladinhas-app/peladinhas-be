@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -16,6 +17,9 @@ public interface BookingRepository extends JpaRepository<BookingEntity, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from BookingEntity b join fetch b.match join fetch b.pitch where b.id = :id")
     Optional<BookingEntity> findByIdForUpdate(@Param("id") UUID id);
+
+    @EntityGraph(attributePaths = {"match", "pitch", "pitch.ownerUser"})
+    List<BookingEntity> findAllByPitchOwnerUserIdOrderByCreatedAtDesc(UUID ownerUserId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

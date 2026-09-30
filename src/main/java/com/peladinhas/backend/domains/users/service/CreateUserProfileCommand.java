@@ -6,5 +6,7 @@ import com.peladinhas.backend.domains.users.persistence.PreferredLanguage;
 public record CreateUserProfileCommand(
         AuthenticatedUserPrincipal principal,
         String name,
-        PreferredLanguage preferredLanguage) {
+        PreferredLanguage preferredLanguage,
+        RequestedAccountType accountType,
+        String ownerInvitationCode) {
 }

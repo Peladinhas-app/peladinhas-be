@@ -37,6 +37,8 @@ import com.peladinhas.backend.domains.matches.persistence.MatchFundingState;
 import com.peladinhas.backend.domains.matches.persistence.MatchJoinMode;
 import com.peladinhas.backend.domains.matches.service.CreateMatchCommand;
 import com.peladinhas.backend.domains.matches.service.MatchService;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerProfileEntity;
+import com.peladinhas.backend.domains.owners.persistence.PitchOwnerProfileRepository;
 import com.peladinhas.backend.domains.pitches.persistence.PitchEntity;
 import com.peladinhas.backend.domains.pitches.service.CreatePitchCommand;
 import com.peladinhas.backend.domains.pitches.service.CreatePitchScheduleCommand;
@@ -84,6 +86,9 @@ class FundingFoundationServiceTests extends PostgreSqlContainerTest {
 
     @Autowired
     private MatchService matchService;
+
+    @Autowired
+    private PitchOwnerProfileRepository pitchOwnerProfileRepository;
 
     @Autowired
     private PitchScheduleService pitchScheduleService;
@@ -339,6 +344,7 @@ class FundingFoundationServiceTests extends PostgreSqlContainerTest {
     }
 
     private PitchEntity createPitch(final UserEntity owner) {
+        activateOwner(owner);
         return pitchService.createPitch(new CreatePitchCommand(
                 owner.getId(),
                 "Pitch " + UUID.randomUUID(),
@@ -350,6 +356,18 @@ class FundingFoundationServiceTests extends PostgreSqlContainerTest {
                 new BigDecimal("120.00"),
                 "EUR",
                 true));
+    }
+
+    private void activateOwner(final UserEntity user) {
+        if (pitchOwnerProfileRepository.existsById(user.getId())) {
+            return;
+        }
+        OffsetDateTime now = OffsetDateTime.now(FIXED_CLOCK);
+        PitchOwnerProfileEntity profile = new PitchOwnerProfileEntity();
+        profile.setUser(user);
+        profile.setActivatedAt(now);
+        profile.setCreatedAt(now);
+        pitchOwnerProfileRepository.save(profile);
     }
 
     private void createSchedule(final PitchEntity pitch, final UserEntity owner) {

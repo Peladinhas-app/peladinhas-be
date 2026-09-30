@@ -1,6 +1,7 @@
 package com.peladinhas.backend.domains.pitches.web;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import com.peladinhas.backend.auth.CurrentUserService;
@@ -87,6 +88,14 @@ public class PitchController {
                 request.currency(),
                 request.active()));
         return PitchResponse.from(pitch);
+    }
+
+    @GetMapping("/mine")
+    public List<PitchResponse> myPitches() {
+        UUID currentUserId = currentUserService.requireCurrentUserId();
+        return pitchService.findPitchesOwnedBy(currentUserId).stream()
+                .map(PitchResponse::from)
+                .toList();
     }
 
     @GetMapping("/{pitchId}")
