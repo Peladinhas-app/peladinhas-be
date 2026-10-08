@@ -1,5 +1,7 @@
 package com.peladinhas.backend.domains.matches.web;
 
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import com.peladinhas.backend.auth.CurrentUserService;
@@ -10,6 +12,7 @@ import com.peladinhas.backend.domains.matches.persistence.MatchParticipantEntity
 import com.peladinhas.backend.domains.matches.persistence.MatchStatus;
 import com.peladinhas.backend.domains.matches.service.CreateDirectMatchCommand;
 import com.peladinhas.backend.domains.matches.service.CreateMatchCommand;
+import com.peladinhas.backend.domains.matches.service.MatchDiscoveryService;
 import com.peladinhas.backend.domains.matches.service.MatchParticipationService;
 import com.peladinhas.backend.domains.matches.service.MatchService;
 import com.peladinhas.backend.shared.web.ApiEnumParser;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -28,16 +32,47 @@ import org.springframework.web.bind.annotation.RestController;
 public class MatchController {
 
     private final CurrentUserService currentUserService;
+    private final MatchDiscoveryService discoveryService;
     private final MatchParticipationService participationService;
     private final MatchService matchService;
 
     public MatchController(
             final CurrentUserService currentUserService,
+            final MatchDiscoveryService discoveryService,
             final MatchParticipationService participationService,
             final MatchService matchService) {
         this.currentUserService = currentUserService;
+        this.discoveryService = discoveryService;
         this.participationService = participationService;
         this.matchService = matchService;
+    }
+
+    @GetMapping("/discovery")
+    public MatchDiscoveryPageResponse discoverMatches(
+            @RequestParam(required = false) final String area,
+            @RequestParam(required = false) final OffsetDateTime startsFrom,
+            @RequestParam(required = false) final OffsetDateTime startsTo,
+            @RequestParam(required = false) final LocalTime timeFrom,
+            @RequestParam(required = false) final LocalTime timeTo,
+            @RequestParam(required = false) final String joinMode,
+            @RequestParam(defaultValue = "false") final Boolean availableOnly,
+            @RequestParam(defaultValue = "0") final Integer page,
+            @RequestParam(defaultValue = "20") final Integer size) {
+        UUID currentUserId = currentUserService.requireCurrentUserId();
+        MatchJoinMode parsedJoinMode = joinMode == null || joinMode.isBlank()
+                ? null
+                : ApiEnumParser.parse(MatchJoinMode.class, joinMode, "joinMode");
+        return discoveryService.discoverMatches(
+                currentUserId,
+                area,
+                startsFrom,
+                startsTo,
+                timeFrom,
+                timeTo,
+                parsedJoinMode,
+                availableOnly,
+                page,
+                size);
     }
 
     @PostMapping
