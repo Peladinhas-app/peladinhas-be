@@ -16,6 +16,9 @@ import com.peladinhas.backend.domains.matches.persistence.MatchAdminRepository;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchFundingMode;
 import com.peladinhas.backend.domains.matches.persistence.MatchFundingState;
+import com.peladinhas.backend.domains.matches.persistence.MatchParticipantEntity;
+import com.peladinhas.backend.domains.matches.persistence.MatchParticipantRepository;
+import com.peladinhas.backend.domains.matches.persistence.MatchParticipantStatus;
 import com.peladinhas.backend.domains.matches.persistence.MatchRepository;
 import com.peladinhas.backend.domains.matches.persistence.MatchStatus;
 import com.peladinhas.backend.domains.users.persistence.UserEntity;
@@ -39,6 +42,7 @@ public class MatchService {
     private final GroupRepository groupRepository;
     private final GroupService groupService;
     private final MatchAdminRepository matchAdminRepository;
+    private final MatchParticipantRepository matchParticipantRepository;
     private final MatchRepository matchRepository;
     private final UserRepository userRepository;
 
@@ -47,12 +51,14 @@ public class MatchService {
             final GroupRepository groupRepository,
             final GroupService groupService,
             final MatchAdminRepository matchAdminRepository,
+            final MatchParticipantRepository matchParticipantRepository,
             final MatchRepository matchRepository,
             final UserRepository userRepository) {
         this.clock = clock;
         this.groupRepository = groupRepository;
         this.groupService = groupService;
         this.matchAdminRepository = matchAdminRepository;
+        this.matchParticipantRepository = matchParticipantRepository;
         this.matchRepository = matchRepository;
         this.userRepository = userRepository;
     }
@@ -184,6 +190,7 @@ public class MatchService {
 
         MatchEntity savedMatch = matchRepository.save(match);
         addCreatorAsMatchAdmin(savedMatch, creator, now);
+        addCreatorAsApprovedParticipant(savedMatch, creator, now);
         return savedMatch;
     }
 
@@ -194,5 +201,18 @@ public class MatchService {
         admin.setUser(creator);
         admin.setAssignedAt(now);
         matchAdminRepository.save(admin);
+    }
+
+    private void addCreatorAsApprovedParticipant(
+            final MatchEntity match,
+            final UserEntity creator,
+            final OffsetDateTime now) {
+        MatchParticipantEntity participant = new MatchParticipantEntity();
+        participant.setId(UUID.randomUUID());
+        participant.setMatch(match);
+        participant.setUser(creator);
+        participant.setStatus(MatchParticipantStatus.APPROVED);
+        participant.setJoinedAt(now);
+        matchParticipantRepository.save(participant);
     }
 }

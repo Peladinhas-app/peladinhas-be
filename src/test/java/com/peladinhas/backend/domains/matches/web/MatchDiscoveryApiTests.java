@@ -173,8 +173,8 @@ class MatchDiscoveryApiTests extends PostgreSqlContainerTest {
                 .andExpect(jsonPath("$.matches[0].displayName").value(expectedDisplayName))
                 .andExpect(jsonPath("$.matches[0].durationMinutes").value(60))
                 .andExpect(jsonPath("$.matches[0].maxPlayers").value(10))
-                .andExpect(jsonPath("$.matches[0].occupiedPlaces").value(1))
-                .andExpect(jsonPath("$.matches[0].availablePlaces").value(9))
+                .andExpect(jsonPath("$.matches[0].occupiedPlaces").value(2))
+                .andExpect(jsonPath("$.matches[0].availablePlaces").value(8))
                 .andExpect(jsonPath("$.matches[0].pitchId").value(pitch.getId().toString()))
                 .andExpect(jsonPath("$.matches[0].pitchName").value("Central Pitch"))
                 .andExpect(jsonPath("$.matches[0].pitchAddress").value("Lisbon Center"))
@@ -251,7 +251,7 @@ class MatchDiscoveryApiTests extends PostgreSqlContainerTest {
                 FUTURE_START,
                 MatchJoinMode.OPEN_JOIN,
                 true,
-                3);
+                4);
         createParticipant(full, createUser(), MatchParticipantStatus.APPROVED);
         createParticipant(full, createUser(), MatchParticipantStatus.AWAITING_PAYMENT);
         createParticipant(full, createUser(), MatchParticipantStatus.CONFIRMED);
@@ -274,8 +274,8 @@ class MatchDiscoveryApiTests extends PostgreSqlContainerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.matches[0].matchId").value(available.getId().toString()))
-                .andExpect(jsonPath("$.matches[0].occupiedPlaces").value(1))
-                .andExpect(jsonPath("$.matches[0].availablePlaces").value(2));
+                .andExpect(jsonPath("$.matches[0].occupiedPlaces").value(2))
+                .andExpect(jsonPath("$.matches[0].availablePlaces").value(1));
     }
 
     @Test

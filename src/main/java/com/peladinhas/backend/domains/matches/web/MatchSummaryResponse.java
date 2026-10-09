@@ -1,10 +1,9 @@
 package com.peladinhas.backend.domains.matches.web;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-public record MatchDiscoveryResponse(
+public record MatchSummaryResponse(
         UUID matchId,
         String displayName,
         OffsetDateTime startsAt,
@@ -13,12 +12,7 @@ public record MatchDiscoveryResponse(
         Integer maxPlayers,
         Long occupiedPlaces,
         Integer availablePlaces,
-        UUID pitchId,
-        String pitchName,
-        String pitchAddress,
-        BigDecimal pitchBasePrice,
-        String pitchCurrency,
-        String groupVisibility,
+        String status,
         String joinMode,
         Boolean viewerIsOrganizer,
         String viewerParticipationStatus) {

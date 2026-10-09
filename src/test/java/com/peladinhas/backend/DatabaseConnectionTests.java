@@ -1,4 +1,5 @@
 package com.peladinhas.backend;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -8,12 +9,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import javax.sql.DataSource;
+
 import com.peladinhas.backend.support.PostgreSqlContainerTest;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.test.context.ActiveProfiles;
 
 @ActiveProfiles("test")
@@ -44,9 +49,13 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
             "refunds",
             "users");
 
+    private final DataSource dataSource;
     private final JdbcTemplate jdbcTemplate;
 
-    DatabaseConnectionTests(@Autowired final JdbcTemplate jdbcTemplate) {
+    DatabaseConnectionTests(
+            @Autowired final DataSource dataSource,
+            @Autowired final JdbcTemplate jdbcTemplate) {
+        this.dataSource = dataSource;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -76,7 +85,60 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
                 """, Integer.class);
 
         assertThat(applicationTables).containsExactlyElementsOf(EXPECTED_APPLICATION_TABLES);
-        assertThat(successfulMigrations).isEqualTo(5);
+        assertThat(successfulMigrations).isEqualTo(6);
+    }
+
+
+    /**
+     * Verifies that the creator-participant backfill can be safely rerun.
+     */
+    @Test
+    void creatorParticipantBackfillIsIdempotentAndPreservesExistingRows() throws Exception {
+        UUID missingCreatorId = UUID.randomUUID();
+        UUID existingCreatorId = UUID.randomUUID();
+        UUID missingGroupId = UUID.randomUUID();
+        UUID existingGroupId = UUID.randomUUID();
+        UUID missingMatchId = UUID.randomUUID();
+        UUID existingMatchId = UUID.randomUUID();
+        UUID existingParticipantId = UUID.randomUUID();
+
+        insertUser(missingCreatorId, "missing-creator-%s@example.test".formatted(missingCreatorId));
+        insertUser(existingCreatorId, "existing-creator-%s@example.test".formatted(existingCreatorId));
+        insertGroup(missingGroupId, missingCreatorId);
+        insertGroup(existingGroupId, existingCreatorId);
+        insertMatch(missingMatchId, missingGroupId, missingCreatorId);
+        insertMatch(existingMatchId, existingGroupId, existingCreatorId);
+        insertMatchParticipant(existingParticipantId, existingMatchId, existingCreatorId, "confirmed");
+
+        runCreatorParticipantBackfill();
+        runCreatorParticipantBackfill();
+
+        List<String> missingCreatorStatuses = jdbcTemplate.queryForList("""
+                select status
+                from match_participants
+                where match_id = ? and user_id = ?
+                order by status
+                """, String.class, missingMatchId, missingCreatorId);
+        List<UUID> existingCreatorParticipants = jdbcTemplate.queryForList("""
+                select id
+                from match_participants
+                where match_id = ? and user_id = ?
+                order by id
+                """, UUID.class, existingMatchId, existingCreatorId);
+        OffsetDateTime joinedAt = jdbcTemplate.queryForObject("""
+                select joined_at
+                from match_participants
+                where match_id = ? and user_id = ?
+                """, OffsetDateTime.class, missingMatchId, missingCreatorId);
+        OffsetDateTime createdAt = jdbcTemplate.queryForObject("""
+                select created_at
+                from matches
+                where id = ?
+                """, OffsetDateTime.class, missingMatchId);
+
+        assertThat(missingCreatorStatuses).containsExactly("approved");
+        assertThat(joinedAt).isEqualTo(createdAt);
+        assertThat(existingCreatorParticipants).containsExactly(existingParticipantId);
     }
 
     /**
@@ -494,6 +556,19 @@ class DatabaseConnectionTests extends PostgreSqlContainerTest {
                 """, Integer.class, graph.pitchId());
 
         assertThat(scheduleCount).isEqualTo(2);
+    }
+
+    /**
+     * Re-runs the idempotent V6 creator-participant backfill SQL.
+     *
+     * @throws Exception when the migration script cannot be executed
+     */
+    private void runCreatorParticipantBackfill() throws Exception {
+        try (var connection = dataSource.getConnection()) {
+            ScriptUtils.executeSqlScript(
+                    connection,
+                    new ClassPathResource("db/migration/V6__backfill_match_creator_participants.sql"));
+        }
     }
 
     /**

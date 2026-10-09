@@ -141,6 +141,8 @@ public class MatchDiscoveryService {
                 row.pitchBasePrice(),
                 row.pitchCurrency(),
                 row.groupVisibility(),
-                row.joinMode());
+                row.joinMode(),
+                row.viewerIsOrganizer(),
+                row.viewerParticipationStatus());
     }
 }
