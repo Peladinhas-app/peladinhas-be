@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import java.util.Set;
 import java.util.UUID;
 
+import com.peladinhas.backend.domains.matches.persistence.MatchAdminRepository;
 import com.peladinhas.backend.domains.matches.persistence.MatchEntity;
 import com.peladinhas.backend.domains.matches.persistence.MatchJoinMode;
 import com.peladinhas.backend.domains.matches.persistence.MatchParticipantEntity;
@@ -26,7 +27,14 @@ public class MatchParticipationService {
             MatchParticipantStatus.AWAITING_PAYMENT,
             MatchParticipantStatus.CONFIRMED);
 
+    private static final Set<MatchParticipantStatus> NONTERMINAL_STATUSES = Set.of(
+            MatchParticipantStatus.REQUESTED,
+            MatchParticipantStatus.APPROVED,
+            MatchParticipantStatus.AWAITING_PAYMENT,
+            MatchParticipantStatus.CONFIRMED);
+
     private final Clock clock;
+    private final MatchAdminRepository matchAdminRepository;
     private final MatchParticipantRepository participantRepository;
     private final MatchRepository matchRepository;
     private final MatchService matchService;
@@ -34,11 +42,13 @@ public class MatchParticipationService {
 
     public MatchParticipationService(
             final Clock clock,
+            final MatchAdminRepository matchAdminRepository,
             final MatchParticipantRepository participantRepository,
             final MatchRepository matchRepository,
             final MatchService matchService,
             final UserRepository userRepository) {
         this.clock = clock;
+        this.matchAdminRepository = matchAdminRepository;
         this.participantRepository = participantRepository;
         this.matchRepository = matchRepository;
         this.matchService = matchService;
@@ -50,6 +60,7 @@ public class MatchParticipationService {
         MatchEntity match = requireMatchForCapacityUpdate(matchId);
         requireAcceptingParticipants(match);
         requireJoinMode(match, MatchJoinMode.OPEN_JOIN);
+        requireUserIsNotMatchAdmin(matchId, userId);
         UserEntity user = requireUser(userId);
 
         return participantRepository.findByMatch_IdAndUser_Id(matchId, userId)
@@ -59,9 +70,10 @@ public class MatchParticipationService {
 
     @Transactional
     public MatchParticipantEntity requestToJoin(final UUID matchId, final UUID userId) {
-        MatchEntity match = matchService.requireMatch(matchId);
+        MatchEntity match = requireMatchForCapacityUpdate(matchId);
         requireAcceptingParticipants(match);
         requireJoinMode(match, MatchJoinMode.REQUEST_TO_JOIN);
+        requireUserIsNotMatchAdmin(matchId, userId);
         UserEntity user = requireUser(userId);
 
         return participantRepository.findByMatch_IdAndUser_Id(matchId, userId)
@@ -130,9 +142,8 @@ public class MatchParticipationService {
             participant.setConfirmedAt(null);
             return participantRepository.save(participant);
         }
-        if (participant.getStatus() == MatchParticipantStatus.AWAITING_PAYMENT
-                || participant.getStatus() == MatchParticipantStatus.CONFIRMED) {
-            return participant;
+        if (NONTERMINAL_STATUSES.contains(participant.getStatus())) {
+            throw new InvalidParticipantTransitionException("Participant already has an active match participation.");
         }
         throw new InvalidParticipantTransitionException("Participant cannot re-enter this Open Join flow.");
     }
@@ -145,13 +156,16 @@ public class MatchParticipationService {
             participant.setConfirmedAt(null);
             return participantRepository.save(participant);
         }
-        if (participant.getStatus() == MatchParticipantStatus.REQUESTED
-                || participant.getStatus() == MatchParticipantStatus.APPROVED
-                || participant.getStatus() == MatchParticipantStatus.AWAITING_PAYMENT
-                || participant.getStatus() == MatchParticipantStatus.CONFIRMED) {
-            return participant;
+        if (NONTERMINAL_STATUSES.contains(participant.getStatus())) {
+            throw new InvalidParticipantTransitionException("Participant already has an active match participation.");
         }
         throw new InvalidParticipantTransitionException("Participant cannot re-enter this Request to Join flow.");
+    }
+
+    private void requireUserIsNotMatchAdmin(final UUID matchId, final UUID userId) {
+        if (matchAdminRepository.existsByMatch_IdAndUser_Id(matchId, userId)) {
+            throw new InvalidParticipantTransitionException("Match organizer already participates in this match.");
+        }
     }
 
     private void requireAcceptingParticipants(final MatchEntity match) {

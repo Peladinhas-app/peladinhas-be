@@ -421,7 +421,7 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
         UserEntity creator = createUser();
         UserEntity firstPlayer = createUser();
         UserEntity secondPlayer = createUser();
-        UUID matchId = createRecruitingMatch(creator, "open_join", 1);
+        UUID matchId = createRecruitingMatch(creator, "open_join", 2);
 
         mockMvc.perform(post("/api/v1/matches/{matchId}/join", matchId)
                         .with(jwtFor(firstPlayer)))
@@ -468,6 +468,7 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
         UserEntity creator = createUser();
         UserEntity approvedPlayer = createUser();
         UserEntity rejectedPlayer = createUser();
+        UserEntity rejectedOrganizer = createUser();
         UUID matchId = createRecruitingMatch(creator, "request_to_join", 10);
 
         mockMvc.perform(post("/api/v1/matches/{matchId}/join-requests", matchId)
@@ -575,6 +576,103 @@ class CoreMatchApiTests extends PostgreSqlContainerTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void matchOrganizerCannotJoinOrRequestOwnMatchAgain() throws Exception {
+        UserEntity openJoinCreator = createUser();
+        UUID openJoinMatchId = createRecruitingMatch(openJoinCreator, "open_join", 10);
+
+        mockMvc.perform(post("/api/v1/matches/{matchId}/join", openJoinMatchId)
+                        .with(jwtFor(openJoinCreator)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("business_conflict"));
+
+        UserEntity requestCreator = createUser();
+        UUID requestMatchId = createRecruitingMatch(requestCreator, "request_to_join", 10);
+
+        mockMvc.perform(post("/api/v1/matches/{matchId}/join-requests", requestMatchId)
+                        .with(jwtFor(requestCreator)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("business_conflict"));
+    }
+
+    @Test
+    void upcomingMatchesShowOrganizedAndJoinedRelationshipsWithoutDuplicates() throws Exception {
+        UserEntity creator = createUser();
+        UserEntity requestedPlayer = createUser();
+        UserEntity approvedPlayer = createUser();
+        UserEntity rejectedPlayer = createUser();
+        UserEntity rejectedOrganizer = createUser();
+        UUID matchId = createRecruitingMatch(creator, "request_to_join", 3);
+        UUID rejectedOnlyMatchId = createRecruitingMatch(rejectedOrganizer, "request_to_join", 10);
+
+        mockMvc.perform(post("/api/v1/matches/{matchId}/join-requests", matchId)
+                        .with(jwtFor(requestedPlayer)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/matches/{matchId}/join-requests", matchId)
+                        .with(jwtFor(approvedPlayer)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/matches/{matchId}/join-requests/{userId}/approve", matchId, approvedPlayer.getId())
+                        .with(jwtFor(creator)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/matches/{matchId}/join-requests", rejectedOnlyMatchId)
+                        .with(jwtFor(rejectedPlayer)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/matches/{matchId}/join-requests/{userId}/reject", rejectedOnlyMatchId, rejectedPlayer.getId())
+                        .with(jwtFor(rejectedOrganizer)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/matches/upcoming").with(jwtFor(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].matchId").value(matchId.toString()))
+                .andExpect(jsonPath("$[0].viewerIsOrganizer").value(true))
+                .andExpect(jsonPath("$[0].viewerParticipationStatus").value("approved"))
+                .andExpect(jsonPath("$[0].occupiedPlaces").value(2))
+                .andExpect(jsonPath("$[0].availablePlaces").value(1));
+
+        mockMvc.perform(get("/api/v1/matches/upcoming").with(jwtFor(requestedPlayer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].matchId").value(matchId.toString()))
+                .andExpect(jsonPath("$[0].viewerIsOrganizer").value(false))
+                .andExpect(jsonPath("$[0].viewerParticipationStatus").value("requested"));
+
+        mockMvc.perform(get("/api/v1/matches/upcoming").with(jwtFor(rejectedPlayer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void matchManagementSummaryIsAvailableOnlyToMatchAdmins() throws Exception {
+        UserEntity creator = createUser();
+        UserEntity player = createUser();
+        UserEntity nonAdmin = createUser();
+        UUID matchId = createRecruitingMatch(creator, "request_to_join", 10);
+
+        mockMvc.perform(post("/api/v1/matches/{matchId}/join-requests", matchId)
+                        .with(jwtFor(player)))
+                .andExpect(status().isCreated());
+
+        MvcResult result = mockMvc.perform(get("/api/v1/matches/{matchId}/management", matchId)
+                        .with(jwtFor(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matchId").value(matchId.toString()))
+                .andExpect(jsonPath("$.durationMinutes").value(60))
+                .andExpect(jsonPath("$.occupiedPlaces").value(1))
+                .andExpect(jsonPath("$.availablePlaces").value(9))
+                .andExpect(jsonPath("$.participants.length()").value(2))
+                .andExpect(jsonPath("$.pendingRequests.length()").value(1))
+                .andExpect(jsonPath("$.pendingRequests[0].userId").value(player.getId().toString()))
+                .andReturn();
+
+        assertThat(result.getResponse().getContentAsString())
+                .doesNotContain("email", "authSubject", "authProvider", "hibernateLazyInitializer");
+
+        mockMvc.perform(get("/api/v1/matches/{matchId}/management", matchId)
+                        .with(jwtFor(nonAdmin)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("permission_denied"));
+    }
     private MvcResult createMatch(
             final UUID groupId,
             final UserEntity creator,

@@ -48,7 +48,14 @@ public class MatchDiscoveryRepository {
                     p.base_price as pitch_base_price,
                     p.currency as pitch_currency,
                     g.visibility as group_visibility,
-                    m.join_mode
+                    m.join_mode,
+                    exists (
+                        select 1
+                        from match_admins viewer_admin
+                        where viewer_admin.match_id = m.id
+                          and viewer_admin.user_id = :userId
+                    ) as viewer_is_organizer,
+                    viewer_participant.status as viewer_participation_status
                 %s
                 where %s
                 order by m.starts_at asc, m.id asc
@@ -91,6 +98,9 @@ public class MatchDiscoveryRepository {
                     limit 1
                 ) b on true
                 left join pitches p on p.id = b.pitch_id
+                left join match_participants viewer_participant
+                    on viewer_participant.match_id = m.id
+                   and viewer_participant.user_id = :userId
                 """.formatted(BOOKING_STATUS_FILTER);
     }
 
@@ -179,7 +189,9 @@ public class MatchDiscoveryRepository {
                     resultSet.getBigDecimal("pitch_base_price"),
                     resultSet.getString("pitch_currency"),
                     resultSet.getString("group_visibility"),
-                    resultSet.getString("join_mode"));
+                    resultSet.getString("join_mode"),
+                    resultSet.getBoolean("viewer_is_organizer"),
+                    resultSet.getString("viewer_participation_status"));
         }
 
         private UUID nullableUuid(final ResultSet resultSet, final String columnName) throws SQLException {

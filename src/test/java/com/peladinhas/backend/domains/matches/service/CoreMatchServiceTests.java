@@ -102,6 +102,22 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
     }
 
     @Test
+    void existingGroupMatchCreationAddsCreatorAsApprovedParticipant() {
+        UserEntity creator = createUser();
+        GroupEntity group = createGroup(creator);
+
+        MatchEntity match = createMatch(group, creator, 60, 10, MatchJoinMode.OPEN_JOIN);
+
+        assertThat(participantRepository.findByMatch_IdAndUser_Id(match.getId(), creator.getId()))
+                .hasValueSatisfying(participant -> {
+                    assertThat(participant.getStatus()).isEqualTo(MatchParticipantStatus.APPROVED);
+                    assertThat(participant.getConfirmedAt()).isNull();
+                    assertThat(participant.getCancelledAt()).isNull();
+                });
+        assertThat(capacityReservingParticipantsForMatch(match)).hasSize(1);
+    }
+
+    @Test
     void rejectsUnsupportedDuration() {
         UserEntity creator = createUser();
         GroupEntity group = createGroup(creator);
@@ -220,6 +236,11 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
                 GroupMemberRole.ADMIN,
                 GroupMemberStatus.ACTIVE)).isTrue();
         assertThat(match.getEndsAt()).isEqualTo(DEFAULT_START.plusMinutes(90));
+        assertThat(participantRepository.findByMatch_IdAndUser_Id(match.getId(), creator.getId()))
+                .hasValueSatisfying(participant -> {
+                    assertThat(participant.getStatus()).isEqualTo(MatchParticipantStatus.APPROVED);
+                    assertThat(participant.getConfirmedAt()).isNull();
+                });
     }
 
     @Test
@@ -282,16 +303,16 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
     }
 
     @Test
-    void duplicateOpenJoinDoesNotCreateSecondParticipantRow() {
+    void duplicateOpenJoinIsRejectedForActiveParticipant() {
         UserEntity creator = createUser();
         UserEntity player = createUser();
         MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.OPEN_JOIN, 10);
 
-        MatchParticipantEntity first = participationService.joinOpenMatch(match.getId(), player.getId());
-        MatchParticipantEntity second = participationService.joinOpenMatch(match.getId(), player.getId());
+        participationService.joinOpenMatch(match.getId(), player.getId());
 
-        assertThat(second.getId()).isEqualTo(first.getId());
-        assertThat(participantsForMatch(match)).hasSize(1);
+        assertThatThrownBy(() -> participationService.joinOpenMatch(match.getId(), player.getId()))
+                .isInstanceOf(InvalidParticipantTransitionException.class);
+        assertThat(participantsForMatch(match)).hasSize(2);
     }
 
     @Test
@@ -333,7 +354,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
 
         assertThat(first.getStatus()).isEqualTo(MatchParticipantStatus.REQUESTED);
         assertThat(second.getStatus()).isEqualTo(MatchParticipantStatus.REQUESTED);
-        assertThat(participantsForMatch(match)).hasSize(2);
+        assertThat(participantsForMatch(match)).hasSize(3);
     }
 
     @Test
@@ -341,7 +362,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
         UserEntity creator = createUser();
         UserEntity firstPlayer = createUser();
         UserEntity secondPlayer = createUser();
-        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.REQUEST_TO_JOIN, 1);
+        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.REQUEST_TO_JOIN, 2);
         participationService.requestToJoin(match.getId(), firstPlayer.getId());
         participationService.requestToJoin(match.getId(), secondPlayer.getId());
         participationService.approveRequest(match.getId(), firstPlayer.getId(), creator.getId());
@@ -355,7 +376,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
         UserEntity creator = createUser();
         UserEntity firstPlayer = createUser();
         UserEntity secondPlayer = createUser();
-        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.OPEN_JOIN, 1);
+        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.OPEN_JOIN, 2);
         participationService.joinOpenMatch(match.getId(), firstPlayer.getId());
 
         assertThatThrownBy(() -> participationService.joinOpenMatch(match.getId(), secondPlayer.getId()))
@@ -367,7 +388,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
         UserEntity creator = createUser();
         UserEntity firstPlayer = createUser();
         UserEntity secondPlayer = createUser();
-        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.OPEN_JOIN, 1);
+        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.OPEN_JOIN, 2);
         MatchParticipantEntity first = participationService.joinOpenMatch(match.getId(), firstPlayer.getId());
         first.setStatus(MatchParticipantStatus.CONFIRMED);
         participantRepository.save(first);
@@ -381,7 +402,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
         UserEntity creator = createUser();
         UserEntity rejectedPlayer = createUser();
         UserEntity approvedPlayer = createUser();
-        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.REQUEST_TO_JOIN, 1);
+        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.REQUEST_TO_JOIN, 2);
         participationService.requestToJoin(match.getId(), rejectedPlayer.getId());
         participationService.rejectRequest(match.getId(), rejectedPlayer.getId(), creator.getId());
         participationService.requestToJoin(match.getId(), approvedPlayer.getId());
@@ -399,7 +420,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
         UserEntity creator = createUser();
         UserEntity cancelledPlayer = createUser();
         UserEntity approvedPlayer = createUser();
-        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.REQUEST_TO_JOIN, 1);
+        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.REQUEST_TO_JOIN, 2);
         MatchParticipantEntity cancelled = participationService.requestToJoin(match.getId(), cancelledPlayer.getId());
         cancelled.setStatus(MatchParticipantStatus.CANCELLED);
         cancelled.setCancelledAt(OffsetDateTime.now(FIXED_CLOCK));
@@ -419,7 +440,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
         UserEntity creator = createUser();
         UserEntity firstPlayer = createUser();
         UserEntity secondPlayer = createUser();
-        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.OPEN_JOIN, 1);
+        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.OPEN_JOIN, 2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         var executor = Executors.newFixedThreadPool(2);
@@ -435,7 +456,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
             List<String> results = List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
 
             assertThat(results).containsExactlyInAnyOrder("awaiting_payment", "capacity_reached");
-            assertThat(capacityReservingParticipantsForMatch(match)).hasSize(1);
+            assertThat(capacityReservingParticipantsForMatch(match)).hasSize(2);
         } finally {
             executor.shutdownNow();
         }
@@ -446,7 +467,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
         UserEntity creator = createUser();
         UserEntity firstPlayer = createUser();
         UserEntity secondPlayer = createUser();
-        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.REQUEST_TO_JOIN, 1);
+        MatchEntity match = createRecruitingMatch(createGroup(creator), creator, MatchJoinMode.REQUEST_TO_JOIN, 2);
         participationService.requestToJoin(match.getId(), firstPlayer.getId());
         participationService.requestToJoin(match.getId(), secondPlayer.getId());
         CountDownLatch ready = new CountDownLatch(2);
@@ -464,7 +485,7 @@ class CoreMatchServiceTests extends PostgreSqlContainerTest {
             List<String> results = List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
 
             assertThat(results).containsExactlyInAnyOrder("approved", "capacity_reached");
-            assertThat(capacityReservingParticipantsForMatch(match)).hasSize(1);
+            assertThat(capacityReservingParticipantsForMatch(match)).hasSize(2);
         } finally {
             executor.shutdownNow();
         }

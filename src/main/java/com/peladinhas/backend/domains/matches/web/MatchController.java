@@ -2,6 +2,7 @@ package com.peladinhas.backend.domains.matches.web;
 
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import com.peladinhas.backend.auth.CurrentUserService;
@@ -13,7 +14,9 @@ import com.peladinhas.backend.domains.matches.persistence.MatchStatus;
 import com.peladinhas.backend.domains.matches.service.CreateDirectMatchCommand;
 import com.peladinhas.backend.domains.matches.service.CreateMatchCommand;
 import com.peladinhas.backend.domains.matches.service.MatchDiscoveryService;
+import com.peladinhas.backend.domains.matches.service.MatchManagementService;
 import com.peladinhas.backend.domains.matches.service.MatchParticipationService;
+import com.peladinhas.backend.domains.matches.service.MatchSummaryService;
 import com.peladinhas.backend.domains.matches.service.MatchService;
 import com.peladinhas.backend.shared.web.ApiEnumParser;
 import jakarta.validation.Valid;
@@ -33,18 +36,24 @@ public class MatchController {
 
     private final CurrentUserService currentUserService;
     private final MatchDiscoveryService discoveryService;
+    private final MatchManagementService managementService;
     private final MatchParticipationService participationService;
     private final MatchService matchService;
+    private final MatchSummaryService matchSummaryService;
 
     public MatchController(
             final CurrentUserService currentUserService,
             final MatchDiscoveryService discoveryService,
+            final MatchManagementService managementService,
             final MatchParticipationService participationService,
-            final MatchService matchService) {
+            final MatchService matchService,
+            final MatchSummaryService matchSummaryService) {
         this.currentUserService = currentUserService;
         this.discoveryService = discoveryService;
+        this.managementService = managementService;
         this.participationService = participationService;
         this.matchService = matchService;
+        this.matchSummaryService = matchSummaryService;
     }
 
     @GetMapping("/discovery")
@@ -73,6 +82,11 @@ public class MatchController {
                 availableOnly,
                 page,
                 size);
+    }
+
+    @GetMapping("/upcoming")
+    public List<MatchSummaryResponse> upcomingMatches() {
+        return matchSummaryService.upcomingMatches(currentUserService.requireCurrentUserId());
     }
 
     @PostMapping
@@ -115,6 +129,11 @@ public class MatchController {
     @GetMapping("/{matchId}")
     public MatchResponse getMatch(@PathVariable final UUID matchId) {
         return MatchResponse.from(matchService.requireMatchSummary(matchId));
+    }
+
+    @GetMapping("/{matchId}/management")
+    public MatchManagementResponse manageMatch(@PathVariable final UUID matchId) {
+        return managementService.managementSummary(matchId, currentUserService.requireCurrentUserId());
     }
 
     @PostMapping("/{matchId}/status-transitions")
